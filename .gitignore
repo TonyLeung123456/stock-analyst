@@ -1,0 +1,20 @@
+# A股K线（setup.sh自动下载，不进git）
+data/a_stock/
+data/.tmp*/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Mac
+.DS_Store
+
+# 日志
+*.log
+nohup.out
+
+# 临时文件
+*.tmp
+*.bak
