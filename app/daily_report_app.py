@@ -612,22 +612,35 @@ def _load_name_map():
         pass
     return _NAME_CACHE
 
+# 初始化我的 _NAME_CACHE（调用新版本以获取返回值）
+_NAME_CACHE = _load_name_map()
+
+def _norm_code(code):
+    """Normalize code format for cache lookup.
+    A股: 688667:SS → 688667.SS (strip leading zeros not needed)
+    港股: 0290.HK → 00029.HK (pad to 5 digits), HK0290 → HK00029
+    """
+    if ':SS' in code:
+        return code.replace(':SS', '.SS')
+    if ':SZ' in code:
+        return code.replace(':SZ', '.SZ')
+    if code.endswith('.HK'):
+        num = code.replace('.HK', '').lstrip('0').zfill(5)
+        return num + '.HK'
+    if code.startswith('HK') and not code.endswith('.HK'):
+        num = code[2:].lstrip('0').zfill(5)
+        return 'HK' + num
+    return code
+
 def enrich_names_sectors(results, cfg=None):
     if not results:
         return results
     _load_name_map()
     for r in results:
         code = r.get('code', '')
-        if code.endswith('.SS') or code.endswith('.SZ'):
-            r['name'] = _NAME_CACHE.get(code, r.get('name', code))
-            r['sector'] = _SECTOR_CACHE.get(code, '—')
-        elif code.endswith('.HK'):
-            raw = code.replace('.HK', '').lstrip('0').zfill(5)
-            r['name'] = _NAME_CACHE.get('HK' + raw, _NAME_CACHE.get(code, code))
-            r['sector'] = _SECTOR_CACHE.get('HK' + raw, '—')
-        else:
-            r['name'] = r.get('name', code)
-            r['sector'] = r.get('sector', '—')
+        norm = _norm_code(code)
+        r['name'] = _NAME_CACHE.get(norm, r.get('name', code))
+        r['sector'] = _SECTOR_CACHE.get(norm, '—')
     return results
 
 
