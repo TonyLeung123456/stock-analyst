@@ -568,9 +568,14 @@ def _load_sector_map():
             pass
 
 def _load_name_map():
-    global _NAME_MAP_LOADED
+    """
+    加载股票名称和板块缓存。
+    返回 Dict[code, name]，也填充全局 _NAME_CACHE/_SECTOR_CACHE（供 enrich_names_sectors 使用）
+    和 _a_name_cache/_hk_name_cache（供 run_screening 原始逻辑使用）。
+    """
+    global _NAME_MAP_LOADED, _a_name_cache, _hk_name_cache
     if _NAME_MAP_LOADED:
-        return
+        return _NAME_CACHE
     _NAME_MAP_LOADED = True
     try:
         a_path = '/Users/tonyleung/Downloads/股票/A股/list.txt'
@@ -584,6 +589,9 @@ def _load_name_map():
                         sector = parts[2].strip() if len(parts) >= 3 else '—'
                         _NAME_CACHE[c + '.SZ'] = name
                         _NAME_CACHE[c + '.SS'] = name
+                        _a_name_cache[c] = name
+                        _a_name_cache[c + '.SZ'] = name
+                        _a_name_cache[c + '.SS'] = name
                         _SECTOR_CACHE[c + '.SZ'] = sector
                         _SECTOR_CACHE[c + '.SS'] = sector
         hk_path = '/Users/tonyleung/Downloads/股票/港股/list.txt'
@@ -597,10 +605,12 @@ def _load_name_map():
                         sector = parts[2].strip() if len(parts) >= 3 else '—'
                         _NAME_CACHE['HK' + c] = name
                         _NAME_CACHE[c + '.HK'] = name
+                        _hk_name_cache[c] = name
                         _SECTOR_CACHE['HK' + c] = sector
                         _SECTOR_CACHE[c + '.HK'] = sector
     except Exception:
         pass
+    return _NAME_CACHE
 
 def enrich_names_sectors(results, cfg=None):
     if not results:
@@ -2933,14 +2943,11 @@ function renderSepaFunnel(sc) {
   card.style.display = 'block';
   const chips = [
     { label:'总计', val: sc.total, green: false },
-    { label:'MA50通过', val: sc.ma50, green: false },
-    { label:'MA150通过', val: sc.ma150, green: false },
-    { label:'量比通过', val: sc.vol, green: false },
+    { label:'MA50上方', val: sc.ma50, green: false },
+    { label:'MA150上方', val: sc.ma150, green: false },
+    { label:'量比通过', val: sc.vol_ratio, green: false },
     { label:'VCP通过', val: sc.vcp, green: false },
-    { label:'营收过滤', val: sc.rev, green: false },
-    { label:'净利过滤', val: sc.prof, green: false },
-    { label:'ROE过滤', val: sc.roe, green: false },
-    { label:'CAGR过滤', val: sc.cagr, green: false },
+    { label:'基本面通过', val: sc.fundamental, green: false },
     { label:'最终结果', val: sc.final, green: true },
   ];
   body.innerHTML = chips.map(c => {
