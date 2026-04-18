@@ -18,3 +18,9 @@ nohup.out
 # 临时文件
 *.tmp
 *.bak
+
+# Private / local (do not commit)
+memory/
+.openclaw/
+app/
+data/
