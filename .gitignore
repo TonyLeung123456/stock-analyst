@@ -24,3 +24,7 @@ memory/
 .openclaw/
 app/
 data/
+
+# Environment-specific
+BOOTSTRAP.md
+project/
