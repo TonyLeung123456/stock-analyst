@@ -1626,24 +1626,34 @@ header .logo {
 
 header .logo span { color: var(--text-dim); font-weight: 400; }
 
+/* ── Tab 导航栏 ───────────────────────────── */
 .tabs {
   display: flex;
-  gap: 4px;
+  gap: 2px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px;
 }
 
 .tab {
-  padding: 8px 18px;
-  border-radius: 6px;
+  padding: 8px 20px;
+  border-radius: 7px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--text-dim);
   transition: all 0.2s;
   border: none;
   background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.tab:hover { color: var(--text); background: var(--card-hover); }
-.tab.active { color: var(--accent); background: rgba(0,212,170,0.12); }
+.tab:hover { color: var(--text); background: var(--bg); }
+.tab.active { color: var(--accent); background: rgba(0,212,170,0.15); box-shadow: 0 1px 4px rgba(0,0,0,0.15); }
+
 
 .main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
 
@@ -1973,7 +1983,158 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
 .tab-content { display: none; }
 .tab-content.active { display: block; }
 
+/* ── 选股系统 ─────────────────────────────── */
+.screen-filters {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.filter-group select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 13px;
+  outline: none;
+}
+
+.filter-section {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  min-width: 160px;
+}
+
+.filter-header {
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  user-select: none;
+  background: linear-gradient(135deg, rgba(0,212,170,0.08), transparent);
+}
+
+.filter-header:hover { background: rgba(0,212,170,0.12); }
+
+.section-count { font-size: 10px; color: var(--text-dim); font-weight: 400; }
+.toggle-icon { font-size: 10px; color: var(--text-dim); transition: transform 0.2s; }
+.filter-section.open .toggle-icon { transform: rotate(180deg); }
+
+.filter-body {
+  display: none;
+  padding: 10px 14px;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+}
+.filter-section.open .filter-body { display: flex; }
+
+.filter-check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.filter-check input { accent-color: var(--accent); cursor: pointer; }
+.filter-check:hover { color: var(--text); }
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.filter-row input {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 7px;
+  font-size: 12px;
+  outline: none;
+  width: 58px;
+}
+.filter-row input:focus { border-color: var(--accent); }
+
+/* ── Funnel Bar ────────────────────────────── */
+.funnel-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.funnel-step {
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.funnel-step.active { background: rgba(0,212,170,0.15); border-color: var(--accent); color: var(--accent); }
+
+/* ── Results Table ────────────────────────── */
+.screen-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 8px;
+}
+.screen-table th {
+  background: var(--bg);
+  color: var(--text-dim);
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 2px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.screen-table th:hover { color: var(--accent); }
+.screen-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+.screen-table tr:hover td { background: rgba(0,212,170,0.05); }
+.screen-table td.num { text-align: right; font-family: monospace; }
+
 /* ── mini chart (纯CSS) ─────────────────── */
+.mini-chart {
 .mini-chart {
   display: flex;
   align-items: center;
@@ -1994,11 +2155,11 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
 <header>
   <div class="logo">🐾 哮天 <span>每日收盘报告</span></div>
   <div class="tabs">
-    <button class="tab active" data-tab="dashboard" onclick="switchTab(this)">Dashboard</button>
-    <button class="tab" data-tab="screening" onclick="switchTab(this)">选股系统</button>
-    <button class="tab" data-tab="analysis" onclick="switchTab(this)">个股分析</button>
-    <button class="tab" data-tab="timing" onclick="switchTab(this)">择时监测</button>
-    <button class="tab" data-tab="report" onclick="switchTab(this)">每日报告</button>
+    <button class="tab active" data-tab="dashboard" onclick="switchTab(this)">📊 Dashboard</button>
+    <button class="tab" data-tab="screening" onclick="switchTab(this)">🎯 选股系统</button>
+    <button class="tab" data-tab="analysis" onclick="switchTab(this)">🔍 个股分析</button>
+    <button class="tab" data-tab="timing" onclick="switchTab(this)">⏱️ 择时监测</button>
+    <button class="tab" data-tab="report" onclick="switchTab(this)">📋 每日报告</button>
   </div>
 </header>
 
@@ -2056,6 +2217,7 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
           <div class="filter-row"><span>量比 ≥</span><input type="number" id="s-vol-ratio" value="0.5" min="0" step="0.1" style="width:60px"></div>
           <div class="filter-row"><span>VCP评分 ≥</span><input type="number" id="s-vcp" value="30" min="0" max="100" style="width:60px"></div>
           <div class="filter-row"><span>RSI ≤</span><input type="number" id="s-rsi-max" value="70" min="30" max="100" style="width:60px"></div>
+          <div class="filter-row"><span>RSI ≥</span><input type="number" id="s-rsi-min" placeholder="不限" min="0" max="100" style="width:60px"></div>
         </div>
       </div>
 
@@ -2492,6 +2654,28 @@ let lastScreeningResults = [];
 
 function toggleSection(el) {
   el.parentElement.classList.toggle('open');
+  updateFilterCounts();
+}
+
+function updateFilterCounts() {
+  var sections = document.querySelectorAll('.screen-filters > .filter-section');
+  // 技术面 (index 0)
+  var techCount = 0;
+  ['s-ma50','s-ma150','s-ma200'].forEach(function(id){ if(document.getElementById(id).checked) techCount++; });
+  ['s-vol-ratio','s-vcp','s-rsi-max','s-rsi-min'].forEach(function(id){ var v=document.getElementById(id); if(v&&v.value&&v.value!='0.5'&&v.value!='30'&&v.value!='70') techCount++; });
+  if(sections[0]) sections[0].querySelector('.section-count').textContent = '已选 ' + techCount + ' 项';
+  // 基本面 (index 1)
+  var fundCount = 0;
+  ['s-rev-yoy','s-profit-yoy','s-roe','s-cagr'].forEach(function(id){ var v=document.getElementById(id); if(v&&v.value&&v.value!='25'&&v.value!='30'&&v.value!='10'&&v.value!='20') fundCount++; });
+  if(sections[1]) sections[1].querySelector('.section-count').textContent = '已选 ' + fundCount + ' 项';
+  // 资金面 (index 2)
+  var moneyCount = 0;
+  ['s-north-dir','s-south-dir'].forEach(function(id){ var v=document.getElementById(id); if(v&&v.value!='all') moneyCount++; });
+  if(sections[2]) sections[2].querySelector('.section-count').textContent = '已选 ' + moneyCount + ' 项';
+  // 情绪面 (index 3)
+  var emotionCount = 0;
+  ['s-vix-max','s-vix-calm'].forEach(function(id){ var v=document.getElementById(id); if(id==='s-vix-calm'?v.checked:(v&&v.value)) emotionCount++; });
+  if(sections[3]) sections[3].querySelector('.section-count').textContent = '已选 ' + emotionCount + ' 项';
 }
 
 async function runScreening() {
@@ -2625,6 +2809,7 @@ function resetScreening() {
   document.getElementById('s-funnel').style.display='none';
   document.getElementById('s-results').style.display='none';
   lastScreeningResults = [];
+  updateFilterCounts();
 }
 
 function exportScreeningCSV() {
@@ -2685,9 +2870,15 @@ async function loadAnalysis() {
 }
 
 loadDashboard();
-
 window.addEventListener('load', () => {
-  // 启动后自动刷新一次择时
+  // 筛选条件变化时实时更新计数
+  ['s-ma50','s-ma150','s-ma200','s-vol-ratio','s-vcp','s-rsi-max',
+   's-rev-yoy','s-profit-yoy','s-roe','s-cagr',
+   's-north-dir','s-south-dir','s-vix-max','s-vix-calm'].forEach(function(id){
+    var el = document.getElementById(id);
+    if(el) el.addEventListener('change', updateFilterCounts);
+  });
+  updateFilterCounts();
   setTimeout(() => { refreshTiming(); }, 2000);
 });
 </script>
