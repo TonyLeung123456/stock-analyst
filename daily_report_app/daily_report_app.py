@@ -2206,7 +2206,7 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
         </select>
       </div>
 
-      <div class="filter-section">
+      <div class="filter-section open">
         <div class="filter-header" onclick="toggleSection(this)">
           <span>📈 技术面</span><span class="section-count">已选 4 项</span><span class="toggle-icon">▼</span>
         </div>
@@ -2221,7 +2221,7 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
         </div>
       </div>
 
-      <div class="filter-section">
+      <div class="filter-section open">
         <div class="filter-header" onclick="toggleSection(this)">
           <span>📊 基本面</span><span class="section-count">已选 4 项</span><span class="toggle-icon">▼</span>
         </div>
@@ -2233,7 +2233,7 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
         </div>
       </div>
 
-      <div class="filter-section">
+      <div class="filter-section open">
         <div class="filter-header" onclick="toggleSection(this)">
           <span>💰 资金面</span><span class="section-count">已选 0 项</span><span class="toggle-icon">▼</span>
         </div>
@@ -2243,7 +2243,7 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
         </div>
       </div>
 
-      <div class="filter-section">
+      <div class="filter-section open">
         <div class="filter-header" onclick="toggleSection(this)">
           <span>🌊 情绪面</span><span class="section-count">已选 0 项</span><span class="toggle-icon">▼</span>
         </div>
@@ -2276,7 +2276,7 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
   </div>
 
   <!-- 个股分析 Tab -->
-  <div id="tab-analysis" class="tab-content" style="display:none">
+  <div id="tab-analysis" class="tab-content">
     <div style="padding:10px 0;display:flex;gap:10px;align-items:center">
       <input id="ana-stock" type="text" placeholder="输入股票代码，如 000001.SZ" value=""
         style="flex:1;background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:14px">
