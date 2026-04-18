@@ -1588,7 +1588,7 @@ def generate_report_image() -> Optional[str]:
 # ═══════════════════════════════════════════════════════
 
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 import uvicorn
 
 app = FastAPI(title="哮天每日收盘报告", version="4.0")
@@ -1599,10 +1599,17 @@ async def index():
     return HTML_CONTENT
 
 
+@app.get("/favicon.ico")
+async def favicon():
+    return Response(content=b"", status_code=204)
+
+
 @app.get("/api/dashboard")
 async def get_dashboard():
     try:
         return JSONResponse(get_dashboard_data())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1696,6 +1703,22 @@ async def api_report_image():
     if os.path.exists(fname):
         return JSONResponse({"status": "ok", "path": fname, "exists": True})
     return JSONResponse({"status": "ok", "path": fname, "exists": False})
+
+
+@app.get("/api/path/info")
+async def api_path_info(path: str):
+    """返回指定目录的最新文件修改日期"""
+    try:
+        if not os.path.isdir(path):
+            return JSONResponse({"status": "ok", "path": path, "latest": None, "count": 0})
+        files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
+        if not files:
+            return JSONResponse({"status": "ok", "path": path, "latest": None, "count": 0})
+        latest_mtime = max(os.path.getmtime(os.path.join(path, f)) for f in files)
+        latest_date = date.fromtimestamp(latest_mtime).isoformat()
+        return JSONResponse({"status": "ok", "path": path, "latest": latest_date, "count": len(files)})
+    except Exception as e:
+        return JSONResponse({"status": "error", "path": path, "latest": None, "count": 0, "error": str(e)})
 
 
 # ═══════════════════════════════════════════════════════
@@ -2279,12 +2302,12 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
 }
 /* ── SEPA-VCP 样式 ── */
 .mkt-btn {
-  flex: 1; padding: 9px; border-radius: 8px; border: 1px solid var(--border);
-  background: var(--bg); color: var(--text-dim); cursor: pointer; font-size: 0.82em;
+  flex: 1; padding: 9px; border-radius: 8px; border: 1px solid #2a3a50;
+  background: #0f1623; color: #8899aa; cursor: pointer; font-size: 0.82em;
   transition: all 0.2s; text-align: center;
 }
 .mkt-btn.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
-.mkt-btn:hover:not(.active) { border-color: var(--accent); color: var(--text); }
+.mkt-btn:hover:not(.active) { border-color: var(--accent); color: var(--accent); background: #0f1623; }
 
 .val-badge {
   display: inline-block; background: var(--accent); color: #fff;
@@ -2313,7 +2336,8 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
   <div class="logo">🐾 哮天 <span>每日收盘报告</span></div>
   <div class="tabs">
     <button class="tab active" data-tab="dashboard" onclick="switchTab(this)">📊 Dashboard</button>
-    <button class="tab" data-tab="screening" onclick="switchTab(this)">🎯 选股系统</button>
+    <button class="tab" data-tab="screening" onclick="switchTab(this)">🎯 SEPA × VCP</button>
+    <button class="tab" data-tab="classic" onclick="switchTab(this)">📊 智能筛选</button>
     <button class="tab" data-tab="analysis" onclick="switchTab(this)">🔍 个股分析</button>
     <button class="tab" data-tab="timing" onclick="switchTab(this)">⏱️ 择时监测</button>
     <button class="tab" data-tab="report" onclick="switchTab(this)">📋 每日报告</button>
@@ -2366,16 +2390,34 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
       <!-- ── 路径配置 ── -->
       <div class="card" style="margin-bottom:12px">
         <div class="card-title">⚙️ 数据路径配置</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">
           <div style="display:flex;align-items:center;gap:6px">
             <label style="font-size:0.72em;color:var(--text-dim);min-width:70px">A股K线</label>
             <input id="cfg-a-kline" type="text" value="/Users/tonyleung/Downloads/股票/A股/Kline"
               style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:0.75em;outline:none">
+            <button onclick="updatePathInfo('cfg-a-kline', this)" style="padding:4px 10px;border-radius:6px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-size:0.72em;cursor:pointer;white-space:nowrap">更新</button>
+            <span id="cfg-a-kline-info" style="font-size:0.68em;color:var(--text-dim);min-width:70px"></span>
           </div>
           <div style="display:flex;align-items:center;gap:6px">
             <label style="font-size:0.72em;color:var(--text-dim);min-width:70px">港股K线</label>
             <input id="cfg-hk-kline" type="text" value="/Users/tonyleung/Downloads/股票/港股/Kline"
               style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:0.75em;outline:none">
+            <button onclick="updatePathInfo('cfg-hk-kline', this)" style="padding:4px 10px;border-radius:6px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-size:0.72em;cursor:pointer;white-space:nowrap">更新</button>
+            <span id="cfg-hk-kline-info" style="font-size:0.68em;color:var(--text-dim);min-width:70px"></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <label style="font-size:0.72em;color:var(--text-dim);min-width:70px">A股财报</label>
+            <input id="cfg-a-fin" type="text" value="/Users/tonyleung/Downloads/股票/A股/财报"
+              style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:0.75em;outline:none">
+            <button onclick="updatePathInfo('cfg-a-fin', this)" style="padding:4px 10px;border-radius:6px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-size:0.72em;cursor:pointer;white-space:nowrap">更新</button>
+            <span id="cfg-a-fin-info" style="font-size:0.68em;color:var(--text-dim);min-width:70px"></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <label style="font-size:0.72em;color:var(--text-dim);min-width:70px">港股财报</label>
+            <input id="cfg-hk-fin" type="text" value="/Users/tonyleung/Downloads/股票/港股/财报"
+              style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:0.75em;outline:none">
+            <button onclick="updatePathInfo('cfg-hk-fin', this)" style="padding:4px 10px;border-radius:6px;border:1px solid var(--accent);background:transparent;color:var(--accent);font-size:0.72em;cursor:pointer;white-space:nowrap">更新</button>
+            <span id="cfg-hk-fin-info" style="font-size:0.68em;color:var(--text-dim);min-width:70px"></span>
           </div>
         </div>
       </div>
@@ -2383,11 +2425,20 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
       <!-- ── 市场选择 ── -->
       <div class="card" style="margin-bottom:12px">
         <div class="card-title">🎯 市场选择</div>
-        <div id="mkt-btns" style="display:flex;gap:8px">
-          <div class="mkt-btn active" data-val="both" onclick="setMarket(this)">A股 + 港股</div>
-          <div class="mkt-btn" data-val="cn" onclick="setMarket(this)">仅 A股</div>
-          <div class="mkt-btn" data-val="hk" onclick="setMarket(this)">仅 港股</div>
-        </div>
+        <select id="market-select" onchange="setMarket(this)" style="
+          width: 100%; padding: 11px 14px; border-radius: 8px;
+          border: 2px solid #00d4aa; background: #0f1623;
+          color: #00d4aa; font-size: 0.9em; font-weight: 600;
+          cursor: pointer; outline: none; appearance: none;
+          -webkit-appearance: none;
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%2300d4aa' d='M6 8L0 0h12z'/%3E%3C/svg%3E");
+          background-repeat: no-repeat;
+          background-position: right 14px center;
+        ">
+          <option value="both">📈 A股 + 港股</option>
+          <option value="cn">🟢 仅 A股</option>
+          <option value="hk">🔵 仅 港股</option>
+        </select>
       </div>
 
       <!-- ── 筛选条件 ── -->
@@ -2487,6 +2538,85 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
         </div>
       </div>
 
+    </div>
+  </div>
+
+  <!-- 智能筛选 Tab（经典多维度选股） -->
+  <div id="tab-classic" class="tab-content">
+    <div class="screen-filters">
+      <div class="filter-group">
+        <label style="font-size:12px;color:var(--text-dim)">市场：</label>
+        <select id="s-market">
+          <option value="all">全部</option><option value="hk">港股</option><option value="a">A股</option>
+        </select>
+      </div>
+
+      <div class="filter-section open">
+        <div class="filter-header" onclick="toggleSection(this)">
+          <span>📈 技术面</span><span class="section-count">已选 0 项</span><span class="toggle-icon">▼</span>
+        </div>
+        <div class="filter-body">
+          <label class="filter-check"><input type="checkbox" id="s-ma50"> MA50在价格上方</label>
+          <label class="filter-check"><input type="checkbox" id="s-ma150"> MA150在价格上方</label>
+          <label class="filter-check"><input type="checkbox" id="s-ma200"> MA200在价格上方</label>
+          <div class="filter-row"><span>量比 ≥</span><input type="number" id="s-vol-ratio" value="0.5" min="0" step="0.1" style="width:60px"></div>
+          <div class="filter-row"><span>VCP评分 ≥</span><input type="number" id="s-vcp" value="30" min="0" max="100" style="width:60px"></div>
+          <div class="filter-row"><span>RSI ≤</span><input type="number" id="s-rsi-max" value="70" min="30" max="100" style="width:60px"></div>
+          <div class="filter-row"><span>RSI ≥</span><input type="number" id="s-rsi-min" placeholder="不限" min="0" max="100" style="width:60px"></div>
+        </div>
+      </div>
+
+      <div class="filter-section open">
+        <div class="filter-header" onclick="toggleSection(this)">
+          <span>📊 基本面</span><span class="section-count">已选 0 项</span><span class="toggle-icon">▼</span>
+        </div>
+        <div class="filter-body">
+          <div class="filter-row"><span>营收增速 YoY ≥</span><input type="number" id="s-rev-yoy" value="25" min="0" max="100" style="width:60px">%</div>
+          <div class="filter-row"><span>净利润增速 YoY ≥</span><input type="number" id="s-profit-yoy" value="30" min="0" max="100" style="width:60px">%</div>
+          <div class="filter-row"><span>ROE ≥</span><input type="number" id="s-roe" value="10" min="0" max="50" style="width:60px">%</div>
+          <div class="filter-row"><span>3年CAGR ≥</span><input type="number" id="s-cagr" value="20" min="0" max="100" style="width:60px">%</div>
+        </div>
+      </div>
+
+      <div class="filter-section open">
+        <div class="filter-header" onclick="toggleSection(this)">
+          <span>💰 资金面</span><span class="section-count">已选 0 项</span><span class="toggle-icon">▼</span>
+        </div>
+        <div class="filter-body">
+          <div class="filter-row"><span>北向资金：</span><select id="s-north-dir" style="width:90px"><option value="all">全部</option><option value="buy">净买入</option><option value="sell">净卖出</option></select></div>
+          <div class="filter-row"><span>南向资金：</span><select id="s-south-dir" style="width:90px"><option value="all">全部</option><option value="buy">净买入</option><option value="sell">净卖出</option></select></div>
+        </div>
+      </div>
+
+      <div class="filter-section open">
+        <div class="filter-header" onclick="toggleSection(this)">
+          <span>🌊 情绪面</span><span class="section-count">已选 0 项</span><span class="toggle-icon">▼</span>
+        </div>
+        <div class="filter-body">
+          <div class="filter-row"><span>VIX ≤</span><input type="number" id="s-vix-max" placeholder="不限" min="0" max="100" style="width:60px"></div>
+          <label class="filter-check"><input type="checkbox" id="s-vix-calm"> 仅VIX平静（≤25）</label>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;padding:10px 0">
+        <button onclick="runScreening()" style="background:var(--accent);color:#000;font-weight:700;border:none;border-radius:6px;padding:9px 24px;cursor:pointer;font-size:14px">🔍 开始选股</button>
+        <button onclick="resetScreening()" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:9px 16px;cursor:pointer;font-size:13px">重置</button>
+        <button id="export-csv-btn" onclick="exportScreeningCSV()" style="display:none;background:var(--bg-card);color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:9px 16px;cursor:pointer;font-size:13px">📥 导出CSV</button>
+      </div>
+    </div>
+
+    <div id="s-funnel" class="funnel-bar" style="display:none"></div>
+
+    <div id="s-results" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0">
+        <span id="s-result-count" style="font-size:13px;color:var(--text-dim)"></span>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="screen-table" id="s-table">
+          <thead id="s-table-head"></thead>
+          <tbody id="s-table-body"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -2876,9 +3006,31 @@ function syncSliderFloat(el, lblId) {
   document.getElementById(lblId).textContent = parseFloat(el.value).toFixed(1);
 }
 
-function setMarket(btn) {
-  document.querySelectorAll('.mkt-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+async function updatePathInfo(inputId, btnEl) {
+  const path = document.getElementById(inputId).value.trim();
+  const infoEl = document.getElementById(inputId + '-info');
+  btnEl.textContent = '...';
+  btnEl.disabled = true;
+  try {
+    const r = await fetch('/api/path/info?path=' + encodeURIComponent(path));
+    const d = await r.json();
+    if (d.latest) {
+      infoEl.textContent = d.latest + ' (' + d.count + '文件)';
+      infoEl.style.color = 'var(--accent)';
+    } else {
+      infoEl.textContent = '无数据';
+      infoEl.style.color = 'var(--text-dim)';
+    }
+  } catch(e) {
+    infoEl.textContent = '查询失败';
+    infoEl.style.color = 'var(--red)';
+  }
+  btnEl.textContent = '更新';
+  btnEl.disabled = false;
+}
+
+function setMarket(el) {
+  // el is the <select> element — value is already updated on change
 }
 
 function getSepaParams() {
@@ -2886,8 +3038,10 @@ function getSepaParams() {
     config: {
       a_kline_dir:  document.getElementById('cfg-a-kline').value,
       hk_kline_dir: document.getElementById('cfg-hk-kline').value,
+      a_fin_dir:    document.getElementById('cfg-a-fin').value,
+      hk_fin_dir:   document.getElementById('cfg-hk-fin').value,
     },
-    market: document.querySelector('.mkt-btn.active').dataset.val,
+    market: document.getElementById('market-select').value,
     fundamental: {
       rev_yoy:  parseFloat(document.getElementById('sl-rev').value),
       prof_yoy: parseFloat(document.getElementById('sl-prof').value),
@@ -3000,7 +3154,7 @@ function renderSepaTable(rows) {
   for (let i = 0; i < sorted.length; i++) {
     const r = sorted[i];
     const score = r.vcp_score || 0;
-    h += '<tr style="cursor:pointer" data-code="' + r.code + '" onclick="showAnalysis(\'' + r.code + '\')">';
+    h += `<tr style="cursor:pointer" data-code="${r.code}" onclick="showAnalysis('${r.code}')">`;
     h += '<td style="padding:7px 10px;color:var(--muted)">' + (i+1) + '</td>';
     h += '<td style="padding:7px 10px;font-weight:600">' + (r.code||'') + '</td>';
     h += '<td style="padding:7px 10px">' + (r.name||'') + '</td>';
@@ -3055,7 +3209,7 @@ function exportSepaCsv() {
     r.is_contracting?'是':'否', r.breakouts||'',
     r.rev_yoy||'', r.prof_yoy||'', r.roe||'', r.cagr_3y||'',
   ]);
-  const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
+  const csv = [headers, ...rows].map(r => r.join(',')).join('\\n');
   const blob = new Blob([csv], {type:'text/csv'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -3069,6 +3223,157 @@ function showAnalysis(code) {
   document.querySelector('[data-tab="analysis"]').click();
   document.getElementById('ana-stock').value = code;
   loadAnalysis();
+}
+
+// ── 智能筛选 JS ─────────────────────────────────────────────────────
+let lastScreeningResults = [];
+
+async function runScreening() {
+  const params = {
+    market: document.getElementById('s-market').value,
+    ma50_above: document.getElementById('s-ma50').checked,
+    ma150_above: document.getElementById('s-ma150').checked,
+    ma200_above: document.getElementById('s-ma200').checked,
+    min_vol_ratio: parseFloat(document.getElementById('s-vol-ratio').value) || 1.0,
+    min_vcp_score: parseFloat(document.getElementById('s-vcp').value) || 0,
+    rsi_max: parseFloat(document.getElementById('s-rsi-max').value) || null,
+    rsi_min: parseFloat(document.getElementById('s-rsi-min').value) || null,
+    min_rev_yoy: parseFloat(document.getElementById('s-rev-yoy').value) || 0,
+    min_profit_yoy: parseFloat(document.getElementById('s-profit-yoy').value) || 0,
+    min_roe: parseFloat(document.getElementById('s-roe').value) || 0,
+    min_cagr: parseFloat(document.getElementById('s-cagr').value) || 0,
+    north_dir: document.getElementById('s-north-dir').value,
+    south_dir: document.getElementById('s-south-dir').value,
+    vix_max: parseFloat(document.getElementById('s-vix-max').value) || null,
+    vix_calm: document.getElementById('s-vix-calm').checked,
+  };
+  const r = await fetch('/api/screening', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(params)
+  });
+  const d = await r.json();
+  lastScreeningResults = d.results || [];
+  const f = d.funnel || {};
+  const funnelEl = document.getElementById('s-funnel');
+  funnelEl.style.display = 'flex';
+  funnelEl.innerHTML = '<span class="funnel-step' + (f.total ? ' active' : '') + '">总计 ' + (f.total||0) + ' 只</span>' +
+    '<span class="funnel-step">MA50通过 ' + (f.ma50||0) + ' 只</span>' +
+    '<span class="funnel-step">MA150通过 ' + (f.ma150||0) + ' 只</span>' +
+    '<span class="funnel-step">VCP通过 ' + (f.vcp||0) + ' 只</span>' +
+    '<span class="funnel-step active">最终 ' + (f.final||0) + ' 只</span>';
+  const cols = [
+    {key:'code', label:'代码', w:'90px'},
+    {key:'name', label:'名称', w:'100px'},
+    {key:'market', label:'市场', w:'60px'},
+    {key:'vcp_score', label:'VCP评分', w:'70px', num:true},
+    {key:'volume_ratio', label:'量比', w:'60px', num:true},
+    {key:'rsi14', label:'RSI', w:'60px', num:true},
+    {key:'ma50_ok', label:'MA50', w:'60px', bool:true},
+    {key:'ma150_ok', label:'MA150', w:'60px', bool:true},
+    {key:'rev_yoy', label:'营收YoY', w:'75px', num:true, pct:true},
+    {key:'profit_yoy', label:'净利YoY', w:'75px', num:true, pct:true},
+    {key:'roe', label:'ROE', w:'60px', num:true, pct:true},
+    {key:'north_dir', label:'北向', w:'70px'},
+    {key:'south_dir', label:'南向', w:'70px'},
+    {key:'vix_level', label:'VIX', w:'60px'},
+  ];
+  let th = '<tr>' + cols.map(c => '<th style="width:80px" data-key="'+c.key+'" onclick="sortTable(this)">'+c.label+'</th>').join('') + '</tr>';
+  document.getElementById('s-table-head').innerHTML = th;
+  document.getElementById('s-result-count').textContent = '共 ' + lastScreeningResults.length + ' 只符合条件';
+  renderTableBody(lastScreeningResults, cols);
+  document.getElementById('s-results').style.display = 'block';
+  document.getElementById('export-csv-btn').style.display = lastScreeningResults.length > 0 ? 'inline-block' : 'none';
+}
+
+let _sortKey = 'vcp_score', _sortAsc = false;
+function sortTable(th) {
+  var key = th ? th.getAttribute('data-key') : _sortKey;
+  if (key === _sortKey) { _sortAsc = !_sortAsc; } else { _sortKey = key; _sortAsc = false; }
+  var cols = getCols();
+  lastScreeningResults.sort(function(a, b) {
+    var va = a[_sortKey], vb = b[_sortKey];
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    if (typeof va === 'string') return _sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    return _sortAsc ? va - vb : vb - va;
+  });
+  renderTableBody(lastScreeningResults, cols);
+}
+
+function getCols() {
+  return [
+    {key:'code', label:'代码', w:'90px'},
+    {key:'name', label:'名称', w:'100px'},
+    {key:'market', label:'市场', w:'60px'},
+    {key:'vcp_score', label:'VCP评分', w:'70px', num:true},
+    {key:'volume_ratio', label:'量比', w:'60px', num:true},
+    {key:'rsi14', label:'RSI', w:'60px', num:true},
+    {key:'ma50_ok', label:'MA50', w:'60px', bool:true},
+    {key:'ma150_ok', label:'MA150', w:'60px', bool:true},
+    {key:'rev_yoy', label:'营收YoY', w:'75px', num:true, pct:true},
+    {key:'profit_yoy', label:'净利YoY', w:'75px', num:true, pct:true},
+    {key:'roe', label:'ROE', w:'60px', num:true, pct:true},
+    {key:'north_dir', label:'北向', w:'70px'},
+    {key:'south_dir', label:'南向', w:'70px'},
+    {key:'vix_level', label:'VIX', w:'60px'},
+  ];
+}
+
+function renderTableBody(rows, cols) {
+  let h = '';
+  for (const r of rows) {
+    h += '<tr data-code="'+r.code+'" onclick="showAnalysis(this.dataset.code)">';
+    for (const c of cols) {
+      let v = r[c.key];
+      if (c.bool) v = v ? '<span style="color:var(--accent)">✅</span>' : '<span style="color:var(--red)">❌</span>';
+      else if (c.pct) v = v != null ? v.toFixed(1)+'%' : '—';
+      else if (c.num) v = v != null ? (typeof v === 'number' ? v.toFixed(2) : v) : '—';
+      else if (v == null) v = '—';
+      h += '<td class="'+(c.num?'num':'')+'">'+v+'</td>';
+    }
+    h += '</tr>';
+  }
+  document.getElementById('s-table-body').innerHTML = h || '<tr><td colspan="'+cols.length+'" style="text-align:center;color:var(--text-dim);padding:20px">无符合条件股票</td></tr>';
+}
+
+function resetScreening() {
+  document.getElementById('s-market').value='all';
+  document.getElementById('s-ma50').checked=false;
+  document.getElementById('s-ma150').checked=false;
+  document.getElementById('s-ma200').checked=false;
+  document.getElementById('s-vol-ratio').value='0.5';
+  document.getElementById('s-vcp').value='30';
+  document.getElementById('s-rsi-max').value='70';
+  document.getElementById('s-rsi-min').value='';
+  document.getElementById('s-rev-yoy').value='25';
+  document.getElementById('s-profit-yoy').value='30';
+  document.getElementById('s-roe').value='10';
+  document.getElementById('s-cagr').value='20';
+  document.getElementById('s-north-dir').value='all';
+  document.getElementById('s-south-dir').value='all';
+  document.getElementById('s-vix-max').value='';
+  document.getElementById('s-vix-calm').checked=false;
+  document.getElementById('s-funnel').style.display='none';
+  document.getElementById('s-results').style.display='none';
+  lastScreeningResults = [];
+}
+
+function exportScreeningCSV() {
+  if (!lastScreeningResults.length) return;
+  const cols = getCols();
+  const headers = cols.map(c => c.label);
+  const rows = lastScreeningResults.map(r => cols.map(c => {
+    let v = r[c.key];
+    if (v == null) return '';
+    if (c.bool) v = v ? '是' : '否';
+    return String(v);
+  }));
+  const csv = [headers, ...rows].map(r => r.join(',')).join('\\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href=url; a.download='screening_'+new Date().toISOString().slice(0,10)+'.csv'; a.click();
+  URL.revokeObjectURL(url);
 }
 
 // ── 个股分析 JS ─────────────────────────────────────────────────────
