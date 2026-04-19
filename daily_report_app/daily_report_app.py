@@ -18,10 +18,11 @@ from typing import Optional, List, Dict, Any, Tuple
 from collections import defaultdict
 
 warnings.filterwarnings("ignore")
-for _k in list(os.environ.keys()):
-    if _k.lower() in ("http_proxy", "https_proxy", "all_proxy", "no_proxy"):
-        del os.environ[_k]
-os.environ["NO_PROXY"] = "*"
+# 保留代理设置，以便访问 Yahoo Finance
+# for _k in list(os.environ.keys()):
+#     if _k.lower() in ("http_proxy", "https_proxy", "all_proxy", "no_proxy"):
+#         del os.environ[_k]
+# os.environ["NO_PROXY"] = "*"
 
 # ──────────────────────────────────────────────
 # 依赖检查
@@ -1271,8 +1272,15 @@ def get_dashboard_data() -> Dict[str, Any]:
 
     # 实时行情
     try:
-        rt = fetch_tencent_realtime(["sh000300", "hkHSI", "usNDX", "sh000001"])
-        result["realtime"] = rt
+        rt = fetch_tencent_realtime(["sh000300", "hkHSI", "usNDX", "sh000001", "SHOO"])
+        # 统一代码格式
+        normalized_rt = {}
+        for key, value in rt.items():
+            normalized_key = key
+            if key == "USNDX":
+                normalized_key = "NDX"
+            normalized_rt[normalized_key] = value
+        result["realtime"] = normalized_rt
     except Exception:
         result["realtime"] = {}
 
@@ -2770,18 +2778,34 @@ async function loadDashboard() {
     { label: '沪深300', code: 'SH000300', ma_data: hs300 },
     { label: '恒生指数', code: 'HKHSI', ma_data: hk },
     { label: '纳斯达克', code: 'NDX', ma_data: {} },
-    { label: 'A50期货', code: 'SHOO', ma_data: {} },
+    { label: '恐慌指数', code: 'VIX', extra: vix },
   ];
 
   let html = '';
   for (const c of cards) {
+    if (c.code === 'VIX') {
+      // VIX 恐慌指数特殊处理
+      const vixVal = c.extra.vix;
+      const vixSource = c.extra.source || '';
+      const vixCls = vixVal !== null && vixVal !== undefined ? (vixVal < 20 ? 'up' : vixVal >= 25 ? 'down' : '') : '';
+      html += `<div class="market-card">
+        <div class="label">${c.label}</div>
+        <div class="price">${vixVal !== null && vixVal !== undefined ? vixVal.toFixed(2) : '—'}</div>
+        <div class="chg ${vixCls}" style="font-size:11px">${vixSource}</div>
+        <div class="ma-status">
+          <span class="ma-dot ${vixCls}"></span>
+          ${vixVal !== null && vixVal !== undefined ? (vixVal < 20 ? '市场平静' : vixVal >= 25 ? '市场恐慌' : '正常波动') : '暂无数据'}
+        </div>
+      </div>`;
+      continue;
+    }
     const info = rt[c.code] || {};
     const price = info.price || '—';
     const chg = info.chg_pct;
     const ma_sig = c.ma_data.signal || '';
     const ma_above = c.ma_data.above;
     const ma_dot_cls = ma_above === true ? 'up' : ma_above === false ? 'down' : '';
-    const ma_txt = ma_sig || '暂无数据';
+    const ma_txt = ma_sig || '无 MA 数据';
 
     html += `<div class="market-card">
       <div class="label">${c.label}</div>
