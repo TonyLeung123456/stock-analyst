@@ -50,9 +50,9 @@ except Exception:
 # ═══════════════════════════════════════════════════════
 DEFAULT_CFG = {
     "a_kline_dir":   "/Users/tonyleung/Downloads/股票/A股/Kline",
-    "hk_kline_dir":  "/Users/tonyleung/.openclaw/agency-agents/stock-analyst/data/hk",
-    "north_dir":     "/Users/tonyleung/.openclaw/agency-agents/stock-analyst/data/north",
-    "south_dir":     "/Users/tonyleung/.openclaw/agency-agents/stock-analyst/data/south",
+    "hk_kline_dir":  "/Users/tonyleung/Downloads/股票/港股/Kline",
+    "north_dir":     "./data/north",
+    "south_dir":     "./data/south",
     "report_dir":    "/Users/tonyleung/Downloads/股票/每日报告",
 }
 
@@ -484,32 +484,64 @@ def _load_name_map() -> Dict:
                     continue
     return _NAME_MAP
 
-def load_hk_fin(code: str) -> Optional[Dict]:
-    """返回港股基本面数据 dict 或 None"""
+def load_hk_fin(code: str, fin_dir: str = "") -> Optional[Dict]:
+    """返回港股真实基本面数据 dict 或 None（从财报CSV读取）"""
     if code in _HK_FIN_CACHE:
         return _HK_FIN_CACHE[code]
-    path = os.path.join("/Users/tonyleung/.openclaw/agency-agents/stock-analyst/data/hk", code + ".csv")
-    if not os.path.exists(path):
+    if not fin_dir or not os.path.exists(fin_dir):
         return None
-    rows = _read_klines(path)
-    if len(rows) < 250:
+    fpath = os.path.join(fin_dir, code + ".csv")
+    if not os.path.exists(fpath):
         return None
-    prices = [r["close"] for r in rows]
-    market_cap = prices[-1] * 1e9  # rough
     try:
-        rev = market_cap * 0.15
-        profit = market_cap * 0.05
+        with open(fpath, encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+        if len(rows) < 2:
+            return None
+        r0 = rows[0]
+        r1 = rows[1]
+        r2 = rows[2] if len(rows) > 2 else None
+
+        def get_num(row, key, default=0.0):
+            v = row.get(key, '')
+            try:
+                return float(v) if v not in ('', 'N/A', 'None') else default
+            except (ValueError, TypeError):
+                return default
+
+        rev0 = get_num(r0, 'IS_营业额')
+        rev1 = get_num(r1, 'IS_营业额')
+        rev2 = get_num(r2, 'IS_营业额') if r2 else None
+        profit0 = get_num(r0, 'IS_股东应占溢利')
+        profit1 = get_num(r1, 'IS_股东应占溢利')
+        equity0 = get_num(r0, 'BS_总权益')
+        equity1 = get_num(r1, 'BS_总权益')
+
+        rev_yoy = ((rev0 - rev1) / abs(rev1) * 100) if rev1 and rev1 != 0 else 0.0
+        profit_yoy = ((profit0 - profit1) / abs(profit1) * 100) if profit1 and profit1 != 0 else 0.0
+        roe = (profit0 / abs(equity0) * 100) if equity0 and equity0 != 0 else 0.0
+
+        # 3年CAGR（需要3年营收数据）
+        cagr_3y = None
+        if rev2 and rev2 > 0 and rev0 > 0:
+            try:
+                cagr_3y = ((rev0 / rev2) ** (1/2) - 1) * 100
+            except (ValueError, ZeroDivisionError):
+                cagr_3y = None
+
         fin = {
-            "code": code, "name": _NAME_MAP.get(code, code),
-            "revenue_yoy": 15.0, "net_profit_yoy": 10.0,
-            "roe": 12.0, "cagr_3y": 10.0,
-            "market_cap": market_cap,
+            "code": code,
+            "name": (_NAME_MAP or {}).get(code, code),
+            "revenue_yoy": round(rev_yoy, 2) if rev_yoy is not None else 0,
+            "net_profit_yoy": round(profit_yoy, 2) if profit_yoy is not None else 0,
+            "roe": round(roe, 2) if roe is not None else 0,
+            "cagr_3y": round(cagr_3y, 2) if cagr_3y is not None else 0,
         }
-    except Exception:
-        fin = None
-    if fin:
         _HK_FIN_CACHE[code] = fin
-    return fin
+        return fin
+    except Exception:
+        return None
 
 def calc_vcp_score(kl: List[Dict]) -> Dict[str, Any]:
     """计算VCP评分（0-100），结果缓存"""
@@ -678,6 +710,7 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
     """
     p = params or {}
     market = p.get("market", "all")
+    hk_fin_dir = p.get("hk_fin_dir", "")
     # 加载K线
     hk_stocks = {}
     a_stocks = {}
@@ -726,7 +759,7 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
         funnel["total"] += 1
         snap = snapshot_indicators(kl)
         vcp = calc_vcp_score(kl)
-        fin = load_hk_fin(code)
+        fin = load_hk_fin(code, hk_fin_dir)
         ma50_ok = not p.get("ma50_above") or (snap.get("ma50") and snap["close"] > snap["ma50"])
         ma150_ok = not p.get("ma150_above") or (snap.get("ma150") is None or snap["close"] > snap["ma150"])
         ma200_ok = not p.get("ma200_above") or (snap.get("ma200") is None or snap["close"] > snap["ma200"])
@@ -736,9 +769,14 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
         rsi_max = p.get("rsi_max")
         rsi_min = p.get("rsi_min")
         rsi_ok = (rsi_max is None or rsi <= rsi_max) and (rsi_min is None or rsi >= rsi_min)
+        # 追踪每个过滤器单独失败的数量
+        if not ma50_ok:   funnel["ma50"] += 1
+        if not ma150_ok:  funnel["ma150"] += 1
+        if not vol_ok:    funnel["vol_ratio"] += 1
+        if not vcp_ok:    funnel["vcp"] += 1
+        if not rsi_ok:    funnel["rsi"] = funnel.get("rsi", 0) + 1
         if not (ma50_ok and ma150_ok and vol_ok and vcp_ok and rsi_ok):
             continue
-        funnel["ma50"] += 1
 
         # 基本面
         fin_ok = True
@@ -811,6 +849,12 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
         rsi_max = p.get("rsi_max")
         rsi_min = p.get("rsi_min")
         rsi_ok = (rsi_max is None or rsi <= rsi_max) and (rsi_min is None or rsi >= rsi_min)
+        # 追踪每个过滤器单独失败的数量
+        if not ma50_ok:   funnel["ma50"] += 1
+        if not ma150_ok:  funnel["ma150"] += 1
+        if not vol_ok:    funnel["vol_ratio"] += 1
+        if not vcp_ok:    funnel["vcp"] += 1
+        if not rsi_ok:    funnel["rsi"] = funnel.get("rsi", 0) + 1
         if not (ma50_ok and ma150_ok and vol_ok and vcp_ok and rsi_ok):
             continue
 
@@ -932,8 +976,8 @@ def fetch_eastmoney_index_kline(code: str, days: int = 300) -> Optional[pd.DataF
                 })
         df = pd.DataFrame(rows)
         return df
-    except Exception:
-        return None
+    except Exception as e:
+        import traceback; traceback.print_exc(); return None
 
 
 def fetch_hk_index_kline(code: str, days: int = 500) -> Optional[pd.DataFrame]:
@@ -970,8 +1014,8 @@ def fetch_hk_index_kline(code: str, days: int = 500) -> Optional[pd.DataFrame]:
         df["date"] = pd.to_datetime(df["date"])
         df = df[df["date"] <= pd.Timestamp.today()]
         return df
-    except Exception:
-        return None
+    except Exception as e:
+        import traceback; traceback.print_exc(); return None
 
 
 # ═══════════════════════════════════════════════════════
@@ -1648,6 +1692,7 @@ async def api_screen(params: Optional[Dict[str, Any]] = None):
         vcp_p = p.get("vcp", {})
         converted = {
             "market": market_map.get(p.get("market", "both"), "all"),
+            "hk_fin_dir": p.get("hk_fin_dir", ""),
             "ma50_above": tech.get("require_ma50", True),
             "ma150_above": tech.get("require_ma150", True),
             "min_vol_ratio": tech.get("min_vol_ratio", 1.0),
@@ -1900,22 +1945,40 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
 
 .fund-bar-chart {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 2px;
   height: 80px;
+  position: relative;
+}
+
+.fund-bar-chart::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--border);
+  transform: translateY(-50%);
 }
 
 .fund-bar {
   flex: 1;
-  border-radius: 2px 2px 0 0;
+  border-radius: 2px;
   min-width: 4px;
   transition: opacity 0.2s;
+  position: relative;
 }
 
-.fund-bar:hover { opacity: 0.8; }
+.fund-bar.up {
+  background: var(--green);
+  transform-origin: bottom center;
+}
 
-.fund-bar.up { background: var(--green); }
-.fund-bar.down { background: var(--red); }
+.fund-bar.down {
+  background: var(--red);
+  transform-origin: top center;
+}
 
 .fund-bar-labels {
   display: flex;
@@ -2484,11 +2547,11 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
         </div>
         <div style="margin-top:6px">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text)">
-            <input type="checkbox" id="sl-ma50" checked style="accent-color:var(--accent)">
+            <input type="checkbox" id="sl-ma50" style="accent-color:var(--accent)">
             要求股价 &gt; 50日均线(MA50)
           </label>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text);margin-top:4px">
-            <input type="checkbox" id="sl-ma150" checked style="accent-color:var(--accent)">
+            <input type="checkbox" id="sl-ma150" style="accent-color:var(--accent)">
             要求 MA50 &gt; 150日均线(MA150)，即均线多头排列
           </label>
         </div>
@@ -2771,9 +2834,12 @@ function renderFundChart(elId, rows, key) {
   const maxAbs = Math.max(...rows.map(r => Math.abs(r[key]))) || 1;
   el.innerHTML = rows.map(r => {
     const val = r[key];
-    const h = Math.max(2, Math.abs(val) / maxAbs * 80);
+    const h = Math.max(2, Math.abs(val) / maxAbs * 40); // 40px 是半高度
     const cls = val >= 0 ? 'up' : 'down';
-    return `<div class="fund-bar ${cls}" style="height:${h}px" title="${r.date}: ${val.toFixed(2)}"></div>`;
+    const style = val >= 0 
+      ? `height:${h}px; transform: translateY(-${h}px);`
+      : `height:${h}px;`;
+    return `<div class="fund-bar ${cls}" style="${style}" title="${r.date}: ${val.toFixed(2)}"></div>`;
   }).join('');
 }
 
@@ -3108,15 +3174,17 @@ function renderSepaFunnel(sc) {
   const body = document.getElementById('sepa-funnel-body');
   if (!sc || sc.total === undefined) { card.style.display = 'none'; return; }
   card.style.display = 'block';
+  // 只显示有意义的阶段（有计数 > 0）
+  // 现在 funnel[N] = 该过滤器失败的数量（未通过该条件的股票数）
   const chips = [
-    { label:'总计', val: sc.total, green: false },
-    { label:'MA50上方', val: sc.ma50, green: false },
-    { label:'MA150上方', val: sc.ma150, green: false },
-    { label:'量比通过', val: sc.vol_ratio, green: false },
-    { label:'VCP通过', val: sc.vcp, green: false },
-    { label:'基本面通过', val: sc.fundamental, green: false },
-    { label:'最终结果', val: sc.final, green: true },
-  ];
+    { label:'总计', val: sc.total },
+    { label:'未过MA50', val: sc.ma50 },
+    { label:'未过MA150', val: sc.ma150 },
+    { label:'未过量比', val: sc.vol_ratio },
+    { label:'未过VCP', val: sc.vcp },
+    { label:'未过基本面', val: sc.fundamental },
+    { label:'最终通过', val: sc.final, green: true },
+  ].filter(c => c.val > 0 || c.label === '总计' || c.green);
   body.innerHTML = chips.map(c => {
     const cls = c.green && c.val > 0 ? 'green' : '';
     return '<div class="stat-chip' + (cls ? ' '+cls : '') + '">' + c.label + ' <b>' + (c.val || 0) + '</b></div>';
@@ -3188,8 +3256,8 @@ function resetSepaVcp() {
     if (el) el.value = isFloat ? parseFloat(def).toFixed(1) : def;
     if (lblEl) lblEl.textContent = isFloat ? def : def;
   });
-  document.getElementById('sl-ma50').checked = true;
-  document.getElementById('sl-ma150').checked = true;
+  document.getElementById('sl-ma50').checked = false;
+  document.getElementById('sl-ma150').checked = false;
   document.querySelectorAll('.mkt-btn').forEach(b => b.classList.remove('active'));
   const both = document.querySelector('.mkt-btn[data-val="both"]');
   if (both) both.classList.add('active');
@@ -3432,4 +3500,6 @@ if __name__ == "__main__":
     print("启动服务: http://localhost:7878")
     print("按 Ctrl+C 停止服务")
     print("=" * 60)
-    uvicorn.run(app, host="0.0.0.0", port=7878, log_level="warning")
+
+
+uvicorn.run(app, host="0.0.0.0", port=7878, log_level="warning")
