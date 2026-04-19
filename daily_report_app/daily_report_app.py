@@ -766,14 +766,14 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
     name_map = _load_name_map()
 
     results = []
-    funnel = {"total": 0, "ma50": 0, "ma150": 0, "vol_ratio": 0, "vcp": 0, "fundamental": 0, "final": 0}
+    funnel = {"total": 0, "ma50": 0, "ma150": 0, "vol_ratio": 0, "vcp": 0, "fundamental": 0, "rev_yoy": 0, "profit_yoy": 0, "profit_qoq": 0, "roe": 0, "cagr_3y": 0, "final": 0}
 
     # 扫描港股
     for code, kl in hk_stocks.items():
         funnel["total"] += 1
         
-        # 次新股筛选：上市不满1年（K线数据少于250个交易日）
-        if len(kl) < 250:
+        # 次新股筛选：上市不满1年（K线数据少于250个交易日）- 可选
+        if p.get("exclude_new_stock") and len(kl) < 250:
             continue
             
         snap = snapshot_indicators(kl)
@@ -782,11 +782,19 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
         
         # 技术面筛选
         ma50_ok = not p.get("ma50_above") or (snap.get("ma50") and snap["close"] > snap["ma50"])
-        # 如果ma150不存在，且K线数据不足150天，则跳过ma150筛选
         ma150_ok = not p.get("ma150_above") or (snap.get("ma50") and (snap.get("ma150") is not None and snap["ma50"] > snap["ma150"]) or len(kl) < 150)
         ma200_ok = not p.get("ma200_above") or (snap.get("ma200") is None or snap["close"] > snap["ma200"])
-        vol_ok = vcp["volume_ratio"] >= p.get("min_vol_ratio", 1.0)
-        vcp_ok = vcp["vcp_score"] >= p.get("min_vcp_score", 0)
+        
+        # 量比筛选 - 可选
+        vol_ok = True
+        if "min_vol_ratio" in p:
+            vol_ok = vcp["volume_ratio"] >= p["min_vol_ratio"]
+        
+        # VCP评分筛选 - 可选
+        vcp_ok = True
+        if "min_vcp_score" in p:
+            vcp_ok = vcp["vcp_score"] >= p["min_vcp_score"]
+        
         rsi = snap.get("rsi14", 50)
         rsi_max = p.get("rsi_max")
         rsi_min = p.get("rsi_min")
@@ -801,37 +809,60 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
         if not (ma50_ok and ma150_ok and vol_ok and vcp_ok and rsi_ok):
             continue
 
-        # 基本面筛选
+        # 基本面筛选 - 只有明确设置的条件才应用
         fin_ok = True
+        rev_yoy_ok = True
+        profit_yoy_ok = True
+        profit_qoq_ok = True
+        roe_ok = True
+        cagr_3y_ok = True
+        
         if fin:
-            # 营业收入同比增长率 > 25%
-            if (fin.get("revenue_yoy", 0) or 0) < p.get("min_rev_yoy", 0):
-                fin_ok = False
-            # 净利润同比增长率 > 30%
-            if (fin.get("net_profit_yoy", 0) or 0) < p.get("min_profit_yoy", 0):
-                fin_ok = False
-            # 净利润环比增长为正（如果有数据）
-            if fin.get("net_profit_qoq") is not None and (fin.get("net_profit_qoq", 0) or 0) <= 0:
-                fin_ok = False
-            # ROE > 15%
-            if (fin.get("roe", 0) or 0) < p.get("min_roe", 0):
-                fin_ok = False
-            # 3年CAGR > 20%
-            if (fin.get("cagr_3y", 0) or 0) < p.get("min_cagr", 0):
-                fin_ok = False
+            # 营业收入同比增长率 - 可选
+            if "min_rev_yoy" in p:
+                rev_yoy_ok = (fin.get("revenue_yoy", 0) or 0) >= p["min_rev_yoy"]
+                if not rev_yoy_ok:
+                    fin_ok = False
+            # 净利润同比增长率 - 可选
+            if "min_profit_yoy" in p:
+                profit_yoy_ok = (fin.get("net_profit_yoy", 0) or 0) >= p["min_profit_yoy"]
+                if not profit_yoy_ok:
+                    fin_ok = False
+            # 净利润环比增长为正 - 可选（如果有数据）
+            if "min_profit_qoq" in p and fin.get("net_profit_qoq") is not None:
+                profit_qoq_ok = (fin.get("net_profit_qoq", 0) or 0) > 0
+                if not profit_qoq_ok:
+                    fin_ok = False
+            # ROE - 可选
+            if "min_roe" in p:
+                roe_ok = (fin.get("roe", 0) or 0) >= p["min_roe"]
+                if not roe_ok:
+                    fin_ok = False
+            # 3年CAGR - 可选
+            if "min_cagr" in p:
+                cagr_3y_ok = (fin.get("cagr_3y", 0) or 0) >= p["min_cagr"]
+                if not cagr_3y_ok:
+                    fin_ok = False
         # 当没有财务数据时，默认通过基本面筛选
+        
+        # 追踪每个基本面条件的命中数量
+        if rev_yoy_ok:   funnel["rev_yoy"] += 1
+        if profit_yoy_ok: funnel["profit_yoy"] += 1
+        if profit_qoq_ok: funnel["profit_qoq"] += 1
+        if roe_ok:        funnel["roe"] += 1
+        if cagr_3y_ok:    funnel["cagr_3y"] += 1
         
         if not fin_ok:
             continue
             
         funnel["fundamental"] += 1
 
-        # 资金面（港股跳过南北资金过滤）
+        # 资金面（港股跳过南北资金过滤）- 可选
         nd = p.get("north_dir", "all")
-        nd_all = nd == "all" or nd is None
+        nd_all = nd == "all" or nd is None or "north_dir" not in p
         north_ok = nd_all or (north_buy is not None and (nd == "buy") == (north_buy > 0))
         sd = p.get("south_dir", "all")
-        sd_all = sd == "all" or sd is None
+        sd_all = sd == "all" or sd is None or "south_dir" not in p
         south_ok = sd_all or (south_buy is not None and (sd == "buy") == (south_buy > 0))
         if not (north_ok and south_ok):
             continue
@@ -871,12 +902,12 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
     for code, kl in a_stocks.items():
         funnel["total"] += 1
         
-        # 次新股筛选：上市不满1年（K线数据少于250个交易日）
-        if len(kl) < 250:
+        # 次新股筛选：上市不满1年（K线数据少于250个交易日）- 可选
+        if p.get("exclude_new_stock") and len(kl) < 250:
             continue
             
-        # ST股票筛选：代码中包含ST
-        if "ST" in code or "st" in code:
+        # ST股票筛选：代码中包含ST - 可选
+        if p.get("exclude_st") and ("ST" in code or "st" in code):
             continue
             
         snap = snapshot_indicators(kl)
@@ -884,11 +915,19 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
         
         # 技术面筛选
         ma50_ok = not p.get("ma50_above") or (snap.get("ma50") and snap["close"] > snap["ma50"])
-        # 如果ma150不存在，且K线数据不足150天，则跳过ma150筛选
         ma150_ok = not p.get("ma150_above") or (snap.get("ma50") and (snap.get("ma150") is not None and snap["ma50"] > snap["ma150"]) or len(kl) < 150)
         ma200_ok = not p.get("ma200_above") or (snap.get("ma200") is None or snap["close"] > snap["ma200"])
-        vol_ok = vcp["volume_ratio"] >= p.get("min_vol_ratio", 1.0)
-        vcp_ok = vcp["vcp_score"] >= p.get("min_vcp_score", 0)
+        
+        # 量比筛选 - 可选
+        vol_ok = True
+        if "min_vol_ratio" in p:
+            vol_ok = vcp["volume_ratio"] >= p["min_vol_ratio"]
+        
+        # VCP评分筛选 - 可选
+        vcp_ok = True
+        if "min_vcp_score" in p:
+            vcp_ok = vcp["vcp_score"] >= p["min_vcp_score"]
+        
         rsi = snap.get("rsi14", 50)
         rsi_max = p.get("rsi_max")
         rsi_min = p.get("rsi_min")
@@ -904,16 +943,22 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
         if not (ma50_ok and ma150_ok and vol_ok and vcp_ok and rsi_ok):
             continue
 
-        # A股无南北资金/基本面数据，默认通过
-        north_ok = p.get("north_dir") == "all"
-        south_ok = p.get("south_dir") == "all"
-        if not (north_ok and south_ok):
-            continue
+        # A股无南北资金/基本面数据，默认通过 - 可选
+        if "north_dir" in p:
+            north_ok = p.get("north_dir") == "all"
+            if not north_ok:
+                continue
+        if "south_dir" in p:
+            south_ok = p.get("south_dir") == "all"
+            if not south_ok:
+                continue
 
-        vix_ok = p.get("vix_max") is None or (vix_val is not None and p.get("vix_max") is not None and vix_val <= p.get("vix_max")) or vix_val is None
-        vix_calm_ok = not p.get("vix_calm", False) or vix_calm or vix_val is None
-        if not (vix_ok and vix_calm_ok):
-            continue
+        # 情绪面（A股） - 可选
+        if "vix_max" in p or "vix_calm" in p:
+            vix_ok = p.get("vix_max") is None or (vix_val is not None and vix_val <= p.get("vix_max")) or vix_val is None
+            vix_calm_ok = not p.get("vix_calm", False) or vix_calm or vix_val is None
+            if not (vix_ok and vix_calm_ok):
+                continue
 
         # A股默认通过基本面筛选
         funnel["fundamental"] += 1
@@ -1747,30 +1792,59 @@ async def api_screen(params: Optional[Dict[str, Any]] = None):
         fund = p.get("fundamental", {})
         tech = p.get("technical", {})
         vcp_p = p.get("vcp", {})
+        fund_flow = p.get("fund_flow", {})
+        sentiment = p.get("sentiment", {})
+        
         converted = {
             "market": market_map.get(p.get("market", "both"), "all"),
             "hk_kline_dir": config.get("hk_kline_dir", DEFAULT_CFG["hk_kline_dir"]),
             "a_kline_dir": config.get("a_kline_dir", DEFAULT_CFG["a_kline_dir"]),
             "hk_fin_dir": config.get("hk_fin_dir", ""),
             "a_fin_dir": config.get("a_fin_dir", ""),
-            "ma50_above": tech.get("require_ma50", False),
-            "ma150_above": tech.get("require_ma150", False),
-            "ma200_above": tech.get("require_ma200", False),
-            "min_vol_ratio": tech.get("min_vol_ratio", 1.0),
-            "min_vcp_score": vcp_p.get("min_score", 0),
-            "min_rev_yoy": fund.get("rev_yoy", 0),
-            "min_profit_yoy": fund.get("prof_yoy", 0),
-            "min_roe": fund.get("roe", 0),
-            "min_cagr": fund.get("cagr_3y", 0),
-            "pe_max": fund.get("pe_max", None),
-            "pb_max": fund.get("pb_max", None),
-            "rsi_min": tech.get("rsi_min", None),
-            "rsi_max": tech.get("rsi_max", None),
-            "north_dir": p.get("fund_flow", {}).get("north_dir", "all"),
-            "south_dir": p.get("fund_flow", {}).get("south_dir", "all"),
-            "vix_max": p.get("sentiment", {}).get("vix_max", None),
-            "vix_calm": p.get("sentiment", {}).get("vix_calm", False),
         }
+        
+        # 只包含明确设置的参数
+        if "require_ma50" in tech:
+            converted["ma50_above"] = tech["require_ma50"]
+        if "require_ma150" in tech:
+            converted["ma150_above"] = tech["require_ma150"]
+        if "require_ma200" in tech:
+            converted["ma200_above"] = tech["require_ma200"]
+        if "min_vol_ratio" in tech:
+            converted["min_vol_ratio"] = tech["min_vol_ratio"]
+        if "rsi_min" in tech:
+            converted["rsi_min"] = tech["rsi_min"]
+        if "rsi_max" in tech:
+            converted["rsi_max"] = tech["rsi_max"]
+        if "exclude_new_stock" in tech:
+            converted["exclude_new_stock"] = tech["exclude_new_stock"]
+        
+        if "min_score" in vcp_p:
+            converted["min_vcp_score"] = vcp_p["min_score"]
+        
+        if "rev_yoy" in fund:
+            converted["min_rev_yoy"] = fund["rev_yoy"]
+        if "prof_yoy" in fund:
+            converted["min_profit_yoy"] = fund["prof_yoy"]
+        if "roe" in fund:
+            converted["min_roe"] = fund["roe"]
+        if "cagr_3y" in fund:
+            converted["min_cagr"] = fund["cagr_3y"]
+        if "pe_max" in fund:
+            converted["pe_max"] = fund["pe_max"]
+        if "pb_max" in fund:
+            converted["pb_max"] = fund["pb_max"]
+        
+        if "north_dir" in fund_flow:
+            converted["north_dir"] = fund_flow["north_dir"]
+        if "south_dir" in fund_flow:
+            converted["south_dir"] = fund_flow["south_dir"]
+        
+        if "vix_max" in sentiment:
+            converted["vix_max"] = sentiment["vix_max"]
+        if "vix_calm" in sentiment:
+            converted["vix_calm"] = sentiment["vix_calm"]
+        
         results, funnel = run_screening(converted)
         return JSONResponse({"total": len(results), "results": results, "stage_counts": funnel})
     except Exception as e:
@@ -2578,32 +2652,32 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
         <div style="font-size:0.65em;color:var(--text-dim);letter-spacing:1px;margin:8px 0 6px;text-transform:uppercase">基本面</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
           <div>
-            <label style="font-size:0.72em;color:var(--muted)">营收 YoY &gt; <span class="val-badge" id="lbl-rev">25</span>%</label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-rev-check" checked> 营收 YoY &gt; <span class="val-badge" id="lbl-rev">25</span>%</label>
             <input type="range" id="sl-rev" min="0" max="80" value="25" step="5"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-rev')">
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)">净利 YoY &gt; <span class="val-badge" id="lbl-prof">30</span>%</label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-prof-check" checked> 净利 YoY &gt; <span class="val-badge" id="lbl-prof">30</span>%</label>
             <input type="range" id="sl-prof" min="0" max="100" value="30" step="5"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-prof')">
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)">ROE &gt; <span class="val-badge" id="lbl-roe">15</span>%</label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-roe-check" checked> ROE &gt; <span class="val-badge" id="lbl-roe">15</span>%</label>
             <input type="range" id="sl-roe" min="0" max="40" value="15" step="1"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-roe')">
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)">3年CAGR &gt; <span class="val-badge" id="lbl-cagr">20</span>%</label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-cagr-check" checked> 3年CAGR &gt; <span class="val-badge" id="lbl-cagr">20</span>%</label>
             <input type="range" id="sl-cagr" min="0" max="60" value="20" step="5"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-cagr')">
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)">PE &lt; <span class="val-badge" id="lbl-pe">100</span></label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-pe-check" checked> PE &lt; <span class="val-badge" id="lbl-pe">100</span></label>
             <input type="range" id="sl-pe" min="0" max="100" value="100" step="5"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-pe')">
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)">PB &lt; <span class="val-badge" id="lbl-pb">20</span></label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-pb-check" checked> PB &lt; <span class="val-badge" id="lbl-pb">20</span></label>
             <input type="range" id="sl-pb" min="0" max="20" value="20" step="1"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-pb')">
           </div>
@@ -2612,45 +2686,53 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
         <div style="font-size:0.65em;color:var(--text-dim);letter-spacing:1px;margin:8px 0 6px;text-transform:uppercase">技术面</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
           <div>
-            <label style="font-size:0.72em;color:var(--muted)">量比(10日/120日) &gt; <span class="val-badge" id="lbl-vol">1.0</span>x</label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-vol-check" checked> 量比(10日/120日) &gt; <span class="val-badge" id="lbl-vol">1.0</span>x</label>
             <input type="range" id="sl-vol" min="0.5" max="5" value="1.0" step="0.1"
               style="width:100%;accent-color:var(--accent)" oninput="syncSliderFloat(this,'lbl-vol')">
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)">VCP评分 &ge; <span class="val-badge" id="lbl-vcp">60</span>分</label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-vcp-check" checked> VCP评分 &ge; <span class="val-badge" id="lbl-vcp">60</span>分</label>
             <input type="range" id="sl-vcp" min="20" max="100" value="60" step="5"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-vcp')">
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)">RSI(14) &gt; <span class="val-badge" id="lbl-rsi-min">0</span></label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-rsi-min-check" checked> RSI(14) &gt; <span class="val-badge" id="lbl-rsi-min">0</span></label>
             <input type="range" id="sl-rsi-min" min="0" max="70" value="0" step="5"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-rsi-min')">
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)">RSI(14) &lt; <span class="val-badge" id="lbl-rsi-max">100</span></label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-rsi-max-check" checked> RSI(14) &lt; <span class="val-badge" id="lbl-rsi-max">100</span></label>
             <input type="range" id="sl-rsi-max" min="30" max="100" value="100" step="5"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-rsi-max')">
           </div>
         </div>
         <div style="margin-top:6px">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text)">
-            <input type="checkbox" id="sl-ma50" checked style="accent-color:var(--accent)">
+            <input type="checkbox" id="sl-ma50-check" checked style="accent-color:var(--accent)">
             要求股价 &gt; 50日均线(MA50)
           </label>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text);margin-top:4px">
-            <input type="checkbox" id="sl-ma150" checked style="accent-color:var(--accent)">
+            <input type="checkbox" id="sl-ma150-check" checked style="accent-color:var(--accent)">
             要求 MA50 &gt; 150日均线(MA150)，即均线多头排列
           </label>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text);margin-top:4px">
-            <input type="checkbox" id="sl-ma200" style="accent-color:var(--accent)">
+            <input type="checkbox" id="sl-ma200-check" style="accent-color:var(--accent)">
             要求股价 &gt; 200日均线(MA200)，即长期趋势向上
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text);margin-top:4px">
+            <input type="checkbox" id="sl-new-stock-check" checked style="accent-color:var(--accent)">
+            剔除上市不满1年的次新股（K线数据少于250个交易日）
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text);margin-top:4px">
+            <input type="checkbox" id="sl-exclude-st-check" checked style="accent-color:var(--accent)">
+            剔除ST股票（A股）
           </label>
         </div>
 
         <div style="font-size:0.65em;color:var(--text-dim);letter-spacing:1px;margin:8px 0 6px;text-transform:uppercase">资金面</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
           <div>
-            <label style="font-size:0.72em;color:var(--muted)">北向资金方向</label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-north-check" checked> 北向资金方向</label>
             <select id="sl-north-dir" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);font-size:0.75em;margin-top:4px">
               <option value="all">全部</option>
               <option value="buy">净买入</option>
@@ -2658,7 +2740,7 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
             </select>
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)">南向资金方向</label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-south-check" checked> 南向资金方向</label>
             <select id="sl-south-dir" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);font-size:0.75em;margin-top:4px">
               <option value="all">全部</option>
               <option value="buy">净买入</option>
@@ -2670,13 +2752,13 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
         <div style="font-size:0.65em;color:var(--text-dim);letter-spacing:1px;margin:8px 0 6px;text-transform:uppercase">情绪面</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
           <div>
-            <label style="font-size:0.72em;color:var(--muted)">VIX &lt; <span class="val-badge" id="lbl-vix">50</span></label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-vix-check" checked> VIX &lt; <span class="val-badge" id="lbl-vix">50</span></label>
             <input type="range" id="sl-vix" min="10" max="50" value="50" step="2"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-vix')">
           </div>
           <div style="display:flex;align-items:flex-end">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text)">
-              <input type="checkbox" id="sl-vix-calm" style="accent-color:var(--accent)">
+              <input type="checkbox" id="sl-vix-calm-check" style="accent-color:var(--accent)">
               要求VIX &lt; 25（市场平静）
             </label>
           </div>
@@ -2760,10 +2842,10 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
           <span>📊 基本面</span><span class="section-count">已选 0 项</span><span class="toggle-icon">▼</span>
         </div>
         <div class="filter-body">
-          <div class="filter-row"><span>营收增速 YoY ≥</span><input type="number" id="s-rev-yoy" value="25" min="0" max="100" style="width:60px">%</div>
-          <div class="filter-row"><span>净利润增速 YoY ≥</span><input type="number" id="s-profit-yoy" value="30" min="0" max="100" style="width:60px">%</div>
-          <div class="filter-row"><span>ROE ≥</span><input type="number" id="s-roe" value="10" min="0" max="50" style="width:60px">%</div>
-          <div class="filter-row"><span>3年CAGR ≥</span><input type="number" id="s-cagr" value="20" min="0" max="100" style="width:60px">%</div>
+          <div class="filter-row"><label><input type="checkbox" id="s-rev-yoy-check" checked> 营收增速 YoY ≥</label><input type="number" id="s-rev-yoy" value="25" min="0" max="100" style="width:60px">%</div>
+          <div class="filter-row"><label><input type="checkbox" id="s-profit-yoy-check" checked> 净利润增速 YoY ≥</label><input type="number" id="s-profit-yoy" value="30" min="0" max="100" style="width:60px">%</div>
+          <div class="filter-row"><label><input type="checkbox" id="s-roe-check" checked> ROE ≥</label><input type="number" id="s-roe" value="10" min="0" max="50" style="width:60px">%</div>
+          <div class="filter-row"><label><input type="checkbox" id="s-cagr-check" checked> 3年CAGR ≥</label><input type="number" id="s-cagr" value="20" min="0" max="100" style="width:60px">%</div>
         </div>
       </div>
 
@@ -3242,6 +3324,73 @@ function setMarket(el) {
 }
 
 function getSepaParams() {
+  const fundamental = {};
+  if (document.getElementById('sl-rev-check').checked) {
+    fundamental.rev_yoy = parseFloat(document.getElementById('sl-rev').value);
+  }
+  if (document.getElementById('sl-prof-check').checked) {
+    fundamental.prof_yoy = parseFloat(document.getElementById('sl-prof').value);
+  }
+  if (document.getElementById('sl-roe-check').checked) {
+    fundamental.roe = parseFloat(document.getElementById('sl-roe').value);
+  }
+  if (document.getElementById('sl-cagr-check').checked) {
+    fundamental.cagr_3y = parseFloat(document.getElementById('sl-cagr').value);
+  }
+  if (document.getElementById('sl-pe-check').checked) {
+    fundamental.pe_max = parseFloat(document.getElementById('sl-pe').value);
+  }
+  if (document.getElementById('sl-pb-check').checked) {
+    fundamental.pb_max = parseFloat(document.getElementById('sl-pb').value);
+  }
+  
+  const technical = {};
+  if (document.getElementById('sl-vol-check').checked) {
+    technical.min_vol_ratio = parseFloat(document.getElementById('sl-vol').value);
+  }
+  if (document.getElementById('sl-ma50-check').checked) {
+    technical.require_ma50 = true;
+  }
+  if (document.getElementById('sl-ma150-check').checked) {
+    technical.require_ma150 = true;
+  }
+  if (document.getElementById('sl-ma200-check').checked) {
+    technical.require_ma200 = true;
+  }
+  if (document.getElementById('sl-rsi-min-check').checked) {
+    technical.rsi_min = parseFloat(document.getElementById('sl-rsi-min').value);
+  }
+  if (document.getElementById('sl-rsi-max-check').checked) {
+    technical.rsi_max = parseFloat(document.getElementById('sl-rsi-max').value);
+  }
+  if (document.getElementById('sl-new-stock-check').checked) {
+    technical.exclude_new_stock = true;
+  }
+  if (document.getElementById('sl-exclude-st-check').checked) {
+    technical.exclude_st = true;
+  }
+  
+  const fund_flow = {};
+  if (document.getElementById('sl-north-check').checked) {
+    fund_flow.north_dir = document.getElementById('sl-north-dir').value;
+  }
+  if (document.getElementById('sl-south-check').checked) {
+    fund_flow.south_dir = document.getElementById('sl-south-dir').value;
+  }
+  
+  const sentiment = {};
+  if (document.getElementById('sl-vix-check').checked) {
+    sentiment.vix_max = parseFloat(document.getElementById('sl-vix').value);
+  }
+  if (document.getElementById('sl-vix-calm-check').checked) {
+    sentiment.vix_calm = true;
+  }
+  
+  const vcp = {};
+  if (document.getElementById('sl-vcp-check').checked) {
+    vcp.min_score = parseInt(document.getElementById('sl-vcp').value);
+  }
+  
   return {
     config: {
       a_kline_dir:  document.getElementById('cfg-a-kline').value,
@@ -3250,31 +3399,11 @@ function getSepaParams() {
       hk_fin_dir:   document.getElementById('cfg-hk-fin').value,
     },
     market: document.getElementById('market-select').value,
-    fundamental: {
-      rev_yoy:  parseFloat(document.getElementById('sl-rev').value),
-      prof_yoy: parseFloat(document.getElementById('sl-prof').value),
-      roe:      parseFloat(document.getElementById('sl-roe').value),
-      cagr_3y:  parseFloat(document.getElementById('sl-cagr').value),
-      pe_max:   parseFloat(document.getElementById('sl-pe').value),
-      pb_max:   parseFloat(document.getElementById('sl-pb').value),
-    },
-    technical: {
-      min_vol_ratio: parseFloat(document.getElementById('sl-vol').value),
-      require_ma50:  document.getElementById('sl-ma50').checked,
-      require_ma150: document.getElementById('sl-ma150').checked,
-      require_ma200: document.getElementById('sl-ma200').checked,
-      rsi_min:       parseFloat(document.getElementById('sl-rsi-min').value),
-      rsi_max:       parseFloat(document.getElementById('sl-rsi-max').value),
-    },
-    fund_flow: {
-      north_dir: document.getElementById('sl-north-dir').value,
-      south_dir: document.getElementById('sl-south-dir').value,
-    },
-    sentiment: {
-      vix_max:    parseFloat(document.getElementById('sl-vix').value),
-      vix_calm:   document.getElementById('sl-vix-calm').checked,
-    },
-    vcp: { min_score: parseInt(document.getElementById('sl-vcp').value) },
+    fundamental: fundamental,
+    technical: technical,
+    fund_flow: fund_flow,
+    sentiment: sentiment,
+    vcp: vcp,
   };
 }
 
@@ -3336,6 +3465,11 @@ function renderSepaFunnel(sc) {
   const passed_vol = sc.vol_ratio || 0;
   const passed_vcp = sc.vcp || 0;
   const passed_fundamental = sc.fundamental || 0;
+  const passed_rev_yoy = sc.rev_yoy || 0;
+  const passed_profit_yoy = sc.profit_yoy || 0;
+  const passed_profit_qoq = sc.profit_qoq || 0;
+  const passed_roe = sc.roe || 0;
+  const passed_cagr_3y = sc.cagr_3y || 0;
   const final = sc.final || 0;
   
   const chips = [
@@ -3345,6 +3479,11 @@ function renderSepaFunnel(sc) {
     { label:'通过量比', val: passed_vol, green: true },
     { label:'通过VCP', val: passed_vcp, green: true },
     { label:'通过基本面', val: passed_fundamental, green: true },
+    { label:'→ 营收同比', val: passed_rev_yoy, green: true },
+    { label:'→ 净利润同比', val: passed_profit_yoy, green: true },
+    { label:'→ 净利润环比', val: passed_profit_qoq, green: true },
+    { label:'→ ROE', val: passed_roe, green: true },
+    { label:'→ 3年CAGR', val: passed_cagr_3y, green: true },
     { label:'最终通过', val: final, green: true },
   ];
   body.innerHTML = chips.map(c => {
@@ -3424,10 +3563,25 @@ function resetSepaVcp() {
     if (lblEl) lblEl.textContent = isFloat ? def : def;
   });
   // 重置复选框
-  document.getElementById('sl-ma50').checked = true;
-  document.getElementById('sl-ma150').checked = true;
-  document.getElementById('sl-ma200').checked = false;
-  document.getElementById('sl-vix-calm').checked = false;
+  document.getElementById('sl-rev-check').checked = true;
+  document.getElementById('sl-prof-check').checked = true;
+  document.getElementById('sl-roe-check').checked = true;
+  document.getElementById('sl-cagr-check').checked = true;
+  document.getElementById('sl-pe-check').checked = true;
+  document.getElementById('sl-pb-check').checked = true;
+  document.getElementById('sl-vol-check').checked = true;
+  document.getElementById('sl-vcp-check').checked = true;
+  document.getElementById('sl-rsi-min-check').checked = true;
+  document.getElementById('sl-rsi-max-check').checked = true;
+  document.getElementById('sl-ma50-check').checked = true;
+  document.getElementById('sl-ma150-check').checked = true;
+  document.getElementById('sl-ma200-check').checked = false;
+  document.getElementById('sl-new-stock-check').checked = true;
+  document.getElementById('sl-exclude-st-check').checked = true;
+  document.getElementById('sl-north-check').checked = true;
+  document.getElementById('sl-south-check').checked = true;
+  document.getElementById('sl-vix-check').checked = true;
+  document.getElementById('sl-vix-calm-check').checked = false;
   // 重置下拉框
   document.getElementById('sl-north-dir').value = 'all';
   document.getElementById('sl-south-dir').value = 'all';
