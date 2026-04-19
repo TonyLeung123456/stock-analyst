@@ -82,7 +82,18 @@ def _read_klines(csv_path: str) -> List[Dict]:
                             "volume": float(row.get("volume", 0)),
                         })
                     except (ValueError, KeyError):
-                        continue
+                        # 尝试处理不同的列名顺序
+                        try:
+                            rows.append({
+                                "date":   row.get("date", ""),
+                                "open":   float(row.get("open", 0)),
+                                "high":   float(row.get("high", 0) or row.get("HIGH", 0)),
+                                "low":    float(row.get("low", 0) or row.get("LOW", 0)),
+                                "close":  float(row.get("close", 0) or row.get("CLOSE", 0)),
+                                "volume": float(row.get("volume", 0) or row.get("VOLUME", 0)),
+                            })
+                        except (ValueError, KeyError):
+                            continue
                 rows.sort(key=lambda x: x["date"])
                 return rows
         except Exception:
@@ -471,7 +482,7 @@ def _load_name_map() -> Dict:
     if _NAME_MAP is None:
         _NAME_MAP = {}
         for path in glob.glob(os.path.join(DEFAULT_CFG["hk_kline_dir"], "*.csv")):
-            code = os.path.basename(path).replace(".HK.csv", "")
+            code = os.path.basename(path).replace(".HK.csv", "").replace(".csv", "")
             for enc in ("utf-8", "gbk", "gb2312"):
                 try:
                     with open(path, encoding=enc, errors="ignore") as f:
@@ -716,15 +727,17 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
     hk_stocks = {}
     a_stocks = {}
     if market in ("hk", "all"):
-        for path in glob.glob(os.path.join(DEFAULT_CFG["hk_kline_dir"], "*.csv")):
-            code = os.path.basename(path).replace(".HK.csv", "")
+        hk_kline_dir = p.get("hk_kline_dir", DEFAULT_CFG["hk_kline_dir"])
+        for path in glob.glob(os.path.join(hk_kline_dir, "*.csv")):
+            code = os.path.basename(path).replace(".HK.csv", "").replace(".csv", "")
             kl = _read_klines(path)
             if kl:
                 hk_stocks[code] = kl
     if market in ("a", "all"):
-        a_kline_dir = "/Users/tonyleung/Downloads/股票/A股/Kline"
+        a_kline_dir = p.get("a_kline_dir", DEFAULT_CFG["a_kline_dir"])
         for path in glob.glob(os.path.join(a_kline_dir, "*.csv")):
-            code = os.path.basename(path).replace(".SS.csv", ":SS").replace(".SZ.csv", ":SZ")
+            # 处理 A 股文件名格式：000001.SZ.csv 或 000001.SS.csv
+            code = os.path.basename(path).replace(".csv", "")
             kl = _read_klines(path)
             if kl:
                 a_stocks[code] = kl
@@ -758,44 +771,62 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
     # 扫描港股
     for code, kl in hk_stocks.items():
         funnel["total"] += 1
+        
+        # 次新股筛选：上市不满1年（K线数据少于250个交易日）
+        if len(kl) < 250:
+            continue
+            
         snap = snapshot_indicators(kl)
         vcp = calc_vcp_score(kl)
         fin = load_hk_fin(code, hk_fin_dir)
+        
+        # 技术面筛选
         ma50_ok = not p.get("ma50_above") or (snap.get("ma50") and snap["close"] > snap["ma50"])
-        ma150_ok = not p.get("ma150_above") or (snap.get("ma150") is None or snap["close"] > snap["ma150"])
+        # 如果ma150不存在，且K线数据不足150天，则跳过ma150筛选
+        ma150_ok = not p.get("ma150_above") or (snap.get("ma50") and (snap.get("ma150") is not None and snap["ma50"] > snap["ma150"]) or len(kl) < 150)
         ma200_ok = not p.get("ma200_above") or (snap.get("ma200") is None or snap["close"] > snap["ma200"])
         vol_ok = vcp["volume_ratio"] >= p.get("min_vol_ratio", 1.0)
         vcp_ok = vcp["vcp_score"] >= p.get("min_vcp_score", 0)
         rsi = snap.get("rsi14", 50)
         rsi_max = p.get("rsi_max")
         rsi_min = p.get("rsi_min")
-        rsi_ok = (rsi_max is None or rsi <= rsi_max) and (rsi_min is None or rsi >= rsi_min)
-        # 追踪每个过滤器单独失败的数量
-        if not ma50_ok:   funnel["ma50"] += 1
-        if not ma150_ok:  funnel["ma150"] += 1
-        if not vol_ok:    funnel["vol_ratio"] += 1
-        if not vcp_ok:    funnel["vcp"] += 1
-        if not rsi_ok:    funnel["rsi"] = funnel.get("rsi", 0) + 1
+        rsi_ok = (rsi_max is None or (rsi is not None and rsi <= rsi_max)) and (rsi_min is None or (rsi is not None and rsi >= rsi_min))
+        
+        # 追踪每个过滤器单独通过的数量
+        if ma50_ok:   funnel["ma50"] += 1
+        if ma150_ok:  funnel["ma150"] += 1
+        if vol_ok:    funnel["vol_ratio"] += 1
+        if vcp_ok:    funnel["vcp"] += 1
+        
         if not (ma50_ok and ma150_ok and vol_ok and vcp_ok and rsi_ok):
             continue
 
-        # 基本面
+        # 基本面筛选
         fin_ok = True
         if fin:
-            if fin.get("revenue_yoy", 0) < p.get("min_rev_yoy", 0):
+            # 营业收入同比增长率 > 25%
+            if (fin.get("revenue_yoy", 0) or 0) < p.get("min_rev_yoy", 0):
                 fin_ok = False
-            if fin.get("net_profit_yoy", 0) < p.get("min_profit_yoy", 0):
+            # 净利润同比增长率 > 30%
+            if (fin.get("net_profit_yoy", 0) or 0) < p.get("min_profit_yoy", 0):
                 fin_ok = False
-            if fin.get("roe", 0) < p.get("min_roe", 0):
+            # 净利润环比增长为正（如果有数据）
+            if fin.get("net_profit_qoq") is not None and (fin.get("net_profit_qoq", 0) or 0) <= 0:
                 fin_ok = False
-            if fin.get("cagr_3y", 0) < p.get("min_cagr", 0):
+            # ROE > 15%
+            if (fin.get("roe", 0) or 0) < p.get("min_roe", 0):
                 fin_ok = False
+            # 3年CAGR > 20%
+            if (fin.get("cagr_3y", 0) or 0) < p.get("min_cagr", 0):
+                fin_ok = False
+        # 当没有财务数据时，默认通过基本面筛选
+        
         if not fin_ok:
             continue
+            
         funnel["fundamental"] += 1
 
         # 资金面（港股跳过南北资金过滤）
-        # 港股无南北向数据时，north_dir/south_dir默认为all以通过过滤
         nd = p.get("north_dir", "all")
         nd_all = nd == "all" or nd is None
         north_ok = nd_all or (north_buy is not None and (nd == "buy") == (north_buy > 0))
@@ -806,7 +837,6 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
             continue
 
         # 情绪面（港股跳过VIX过滤，由全局vix_val/vix_calm控制）
-        # vix_val和vix_calm已在循环外定义，无需额外处理
 
         funnel["final"] += 1
         results.append({
@@ -827,6 +857,7 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
             "ma200": round(snap.get("ma200"), 2) if snap.get("ma200") else None,
             "rev_yoy": fin.get("revenue_yoy") if fin else None,
             "profit_yoy": fin.get("net_profit_yoy") if fin else None,
+            "profit_qoq": fin.get("net_profit_qoq") if fin else None,
             "roe": fin.get("roe") if fin else None,
             "cagr_3y": fin.get("cagr_3y") if fin else None,
             "north_dir": "净买入" if north_buy and north_buy > 0 else "净卖出" if north_buy and north_buy < 0 else "—",
@@ -839,23 +870,37 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
     # 扫描A股
     for code, kl in a_stocks.items():
         funnel["total"] += 1
+        
+        # 次新股筛选：上市不满1年（K线数据少于250个交易日）
+        if len(kl) < 250:
+            continue
+            
+        # ST股票筛选：代码中包含ST
+        if "ST" in code or "st" in code:
+            continue
+            
         snap = snapshot_indicators(kl)
         vcp = calc_vcp_score(kl)
+        
+        # 技术面筛选
         ma50_ok = not p.get("ma50_above") or (snap.get("ma50") and snap["close"] > snap["ma50"])
-        ma150_ok = not p.get("ma150_above") or (snap.get("ma150") is None or snap["close"] > snap["ma150"])
+        # 如果ma150不存在，且K线数据不足150天，则跳过ma150筛选
+        ma150_ok = not p.get("ma150_above") or (snap.get("ma50") and (snap.get("ma150") is not None and snap["ma50"] > snap["ma150"]) or len(kl) < 150)
         ma200_ok = not p.get("ma200_above") or (snap.get("ma200") is None or snap["close"] > snap["ma200"])
         vol_ok = vcp["volume_ratio"] >= p.get("min_vol_ratio", 1.0)
         vcp_ok = vcp["vcp_score"] >= p.get("min_vcp_score", 0)
         rsi = snap.get("rsi14", 50)
         rsi_max = p.get("rsi_max")
         rsi_min = p.get("rsi_min")
-        rsi_ok = (rsi_max is None or rsi <= rsi_max) and (rsi_min is None or rsi >= rsi_min)
-        # 追踪每个过滤器单独失败的数量
-        if not ma50_ok:   funnel["ma50"] += 1
-        if not ma150_ok:  funnel["ma150"] += 1
-        if not vol_ok:    funnel["vol_ratio"] += 1
-        if not vcp_ok:    funnel["vcp"] += 1
-        if not rsi_ok:    funnel["rsi"] = funnel.get("rsi", 0) + 1
+        rsi_ok = (rsi_max is None or (rsi is not None and rsi <= rsi_max)) and (rsi_min is None or (rsi is not None and rsi >= rsi_min))
+        
+        # 追踪每个过滤器单独通过的数量
+        if ma50_ok:   funnel["ma50"] += 1
+        if ma150_ok:  funnel["ma150"] += 1
+        if vol_ok:    funnel["vol_ratio"] += 1
+        if vcp_ok:    funnel["vcp"] += 1
+        if rsi_ok:    funnel["rsi"] = funnel.get("rsi", 0) + 1
+        
         if not (ma50_ok and ma150_ok and vol_ok and vcp_ok and rsi_ok):
             continue
 
@@ -865,11 +910,13 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
         if not (north_ok and south_ok):
             continue
 
-        vix_ok = p.get("vix_max") is None or (vix_val is not None and vix_val <= p.get("vix_max"))
-        vix_calm_ok = not p.get("vix_calm", False) or vix_calm
+        vix_ok = p.get("vix_max") is None or (vix_val is not None and p.get("vix_max") is not None and vix_val <= p.get("vix_max")) or vix_val is None
+        vix_calm_ok = not p.get("vix_calm", False) or vix_calm or vix_val is None
         if not (vix_ok and vix_calm_ok):
             continue
 
+        # A股默认通过基本面筛选
+        funnel["fundamental"] += 1
         funnel["final"] += 1
         results.append({
             "code": code,
@@ -887,7 +934,7 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
             "ma50": round(snap.get("ma50"), 2) if snap.get("ma50") else None,
             "ma150": round(snap.get("ma150"), 2) if snap.get("ma150") else None,
             "ma200": round(snap.get("ma200"), 2) if snap.get("ma200") else None,
-            "rev_yoy": None, "profit_yoy": None, "roe": None, "cagr_3y": None,
+            "rev_yoy": None, "profit_yoy": None, "profit_qoq": None, "roe": None, "cagr_3y": None,
             "north_dir": "—", "south_dir": "—",
             "vix_level": "平静" if vix_calm else "紧张",
             "vix": vix_val,
@@ -895,7 +942,8 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
 
     # 排序：VCP评分降序
     results.sort(key=lambda x: x["vcp_score"], reverse=True)
-    funnel["vcp"] = funnel["final"]
+    # 不要覆盖vcp计数
+    # funnel["vcp"] = funnel["final"]
     results = enrich_names_sectors(results)
     return results, funnel
 def _qq_fetch(url: str, timeout: int = 8) -> Optional[str]:
@@ -1695,22 +1743,33 @@ async def api_screen(params: Optional[Dict[str, Any]] = None):
     try:
         p = params or {}
         market_map = {"both": "all", "cn": "a", "hk": "hk"}
+        config = p.get("config", {})
         fund = p.get("fundamental", {})
         tech = p.get("technical", {})
         vcp_p = p.get("vcp", {})
         converted = {
             "market": market_map.get(p.get("market", "both"), "all"),
-            "hk_fin_dir": p.get("hk_fin_dir", ""),
-            "ma50_above": tech.get("require_ma50", True),
-            "ma150_above": tech.get("require_ma150", True),
+            "hk_kline_dir": config.get("hk_kline_dir", DEFAULT_CFG["hk_kline_dir"]),
+            "a_kline_dir": config.get("a_kline_dir", DEFAULT_CFG["a_kline_dir"]),
+            "hk_fin_dir": config.get("hk_fin_dir", ""),
+            "a_fin_dir": config.get("a_fin_dir", ""),
+            "ma50_above": tech.get("require_ma50", False),
+            "ma150_above": tech.get("require_ma150", False),
+            "ma200_above": tech.get("require_ma200", False),
             "min_vol_ratio": tech.get("min_vol_ratio", 1.0),
-            "min_vcp_score": vcp_p.get("min_score", 60),
+            "min_vcp_score": vcp_p.get("min_score", 0),
             "min_rev_yoy": fund.get("rev_yoy", 0),
             "min_profit_yoy": fund.get("prof_yoy", 0),
             "min_roe": fund.get("roe", 0),
             "min_cagr": fund.get("cagr_3y", 0),
-            "north_dir": "all",
-            "south_dir": "all",
+            "pe_max": fund.get("pe_max", None),
+            "pb_max": fund.get("pb_max", None),
+            "rsi_min": tech.get("rsi_min", None),
+            "rsi_max": tech.get("rsi_max", None),
+            "north_dir": p.get("fund_flow", {}).get("north_dir", "all"),
+            "south_dir": p.get("fund_flow", {}).get("south_dir", "all"),
+            "vix_max": p.get("sentiment", {}).get("vix_max", None),
+            "vix_calm": p.get("sentiment", {}).get("vix_calm", False),
         }
         results, funnel = run_screening(converted)
         return JSONResponse({"total": len(results), "results": results, "stage_counts": funnel})
@@ -2529,14 +2588,24 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-prof')">
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)">ROE &gt; <span class="val-badge" id="lbl-roe">10</span>%</label>
-            <input type="range" id="sl-roe" min="0" max="40" value="10" step="1"
+            <label style="font-size:0.72em;color:var(--muted)">ROE &gt; <span class="val-badge" id="lbl-roe">15</span>%</label>
+            <input type="range" id="sl-roe" min="0" max="40" value="15" step="1"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-roe')">
           </div>
           <div>
             <label style="font-size:0.72em;color:var(--muted)">3年CAGR &gt; <span class="val-badge" id="lbl-cagr">20</span>%</label>
             <input type="range" id="sl-cagr" min="0" max="60" value="20" step="5"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-cagr')">
+          </div>
+          <div>
+            <label style="font-size:0.72em;color:var(--muted)">PE &lt; <span class="val-badge" id="lbl-pe">100</span></label>
+            <input type="range" id="sl-pe" min="0" max="100" value="100" step="5"
+              style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-pe')">
+          </div>
+          <div>
+            <label style="font-size:0.72em;color:var(--muted)">PB &lt; <span class="val-badge" id="lbl-pb">20</span></label>
+            <input type="range" id="sl-pb" min="0" max="20" value="20" step="1"
+              style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-pb')">
           </div>
         </div>
 
@@ -2552,16 +2621,65 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
             <input type="range" id="sl-vcp" min="20" max="100" value="60" step="5"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-vcp')">
           </div>
+          <div>
+            <label style="font-size:0.72em;color:var(--muted)">RSI(14) &gt; <span class="val-badge" id="lbl-rsi-min">0</span></label>
+            <input type="range" id="sl-rsi-min" min="0" max="70" value="0" step="5"
+              style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-rsi-min')">
+          </div>
+          <div>
+            <label style="font-size:0.72em;color:var(--muted)">RSI(14) &lt; <span class="val-badge" id="lbl-rsi-max">100</span></label>
+            <input type="range" id="sl-rsi-max" min="30" max="100" value="100" step="5"
+              style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-rsi-max')">
+          </div>
         </div>
         <div style="margin-top:6px">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text)">
-            <input type="checkbox" id="sl-ma50" style="accent-color:var(--accent)">
+            <input type="checkbox" id="sl-ma50" checked style="accent-color:var(--accent)">
             要求股价 &gt; 50日均线(MA50)
           </label>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text);margin-top:4px">
-            <input type="checkbox" id="sl-ma150" style="accent-color:var(--accent)">
+            <input type="checkbox" id="sl-ma150" checked style="accent-color:var(--accent)">
             要求 MA50 &gt; 150日均线(MA150)，即均线多头排列
           </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text);margin-top:4px">
+            <input type="checkbox" id="sl-ma200" style="accent-color:var(--accent)">
+            要求股价 &gt; 200日均线(MA200)，即长期趋势向上
+          </label>
+        </div>
+
+        <div style="font-size:0.65em;color:var(--text-dim);letter-spacing:1px;margin:8px 0 6px;text-transform:uppercase">资金面</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div>
+            <label style="font-size:0.72em;color:var(--muted)">北向资金方向</label>
+            <select id="sl-north-dir" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);font-size:0.75em;margin-top:4px">
+              <option value="all">全部</option>
+              <option value="buy">净买入</option>
+              <option value="sell">净卖出</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.72em;color:var(--muted)">南向资金方向</label>
+            <select id="sl-south-dir" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);font-size:0.75em;margin-top:4px">
+              <option value="all">全部</option>
+              <option value="buy">净买入</option>
+              <option value="sell">净卖出</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="font-size:0.65em;color:var(--text-dim);letter-spacing:1px;margin:8px 0 6px;text-transform:uppercase">情绪面</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div>
+            <label style="font-size:0.72em;color:var(--muted)">VIX &lt; <span class="val-badge" id="lbl-vix">50</span></label>
+            <input type="range" id="sl-vix" min="10" max="50" value="50" step="2"
+              style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-vix')">
+          </div>
+          <div style="display:flex;align-items:flex-end">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text)">
+              <input type="checkbox" id="sl-vix-calm" style="accent-color:var(--accent)">
+              要求VIX &lt; 25（市场平静）
+            </label>
+          </div>
         </div>
       </div>
 
@@ -3137,11 +3255,24 @@ function getSepaParams() {
       prof_yoy: parseFloat(document.getElementById('sl-prof').value),
       roe:      parseFloat(document.getElementById('sl-roe').value),
       cagr_3y:  parseFloat(document.getElementById('sl-cagr').value),
+      pe_max:   parseFloat(document.getElementById('sl-pe').value),
+      pb_max:   parseFloat(document.getElementById('sl-pb').value),
     },
     technical: {
       min_vol_ratio: parseFloat(document.getElementById('sl-vol').value),
       require_ma50:  document.getElementById('sl-ma50').checked,
       require_ma150: document.getElementById('sl-ma150').checked,
+      require_ma200: document.getElementById('sl-ma200').checked,
+      rsi_min:       parseFloat(document.getElementById('sl-rsi-min').value),
+      rsi_max:       parseFloat(document.getElementById('sl-rsi-max').value),
+    },
+    fund_flow: {
+      north_dir: document.getElementById('sl-north-dir').value,
+      south_dir: document.getElementById('sl-south-dir').value,
+    },
+    sentiment: {
+      vix_max:    parseFloat(document.getElementById('sl-vix').value),
+      vix_calm:   document.getElementById('sl-vix-calm').checked,
     },
     vcp: { min_score: parseInt(document.getElementById('sl-vcp').value) },
   };
@@ -3198,17 +3329,24 @@ function renderSepaFunnel(sc) {
   const body = document.getElementById('sepa-funnel-body');
   if (!sc || sc.total === undefined) { card.style.display = 'none'; return; }
   card.style.display = 'block';
-  // 只显示有意义的阶段（有计数 > 0）
-  // 现在 funnel[N] = 该过滤器失败的数量（未通过该条件的股票数）
+  // 每个条件通过的数量
+  const total = sc.total;
+  const passed_ma50 = sc.ma50 || 0;
+  const passed_ma150 = sc.ma150 || 0;
+  const passed_vol = sc.vol_ratio || 0;
+  const passed_vcp = sc.vcp || 0;
+  const passed_fundamental = sc.fundamental || 0;
+  const final = sc.final || 0;
+  
   const chips = [
-    { label:'总计', val: sc.total },
-    { label:'未过MA50', val: sc.ma50 },
-    { label:'未过MA150', val: sc.ma150 },
-    { label:'未过量比', val: sc.vol_ratio },
-    { label:'未过VCP', val: sc.vcp },
-    { label:'未过基本面', val: sc.fundamental },
-    { label:'最终通过', val: sc.final, green: true },
-  ].filter(c => c.val > 0 || c.label === '总计' || c.green);
+    { label:'总计', val: total },
+    { label:'通过MA50', val: passed_ma50, green: true },
+    { label:'通过MA150', val: passed_ma150, green: true },
+    { label:'通过量比', val: passed_vol, green: true },
+    { label:'通过VCP', val: passed_vcp, green: true },
+    { label:'通过基本面', val: passed_fundamental, green: true },
+    { label:'最终通过', val: final, green: true },
+  ];
   body.innerHTML = chips.map(c => {
     const cls = c.green && c.val > 0 ? 'green' : '';
     return '<div class="stat-chip' + (cls ? ' '+cls : '') + '">' + c.label + ' <b>' + (c.val || 0) + '</b></div>';
@@ -3270,9 +3408,14 @@ function renderSepaTable(rows) {
 
 function resetSepaVcp() {
   const defs = [
+    // 基本面
     ['sl-rev','25','lbl-rev'], ['sl-prof','30','lbl-prof'],
-    ['sl-roe','10','lbl-roe'], ['sl-cagr','20','lbl-cagr'],
+    ['sl-roe','15','lbl-roe'], ['sl-cagr','20','lbl-cagr'],
+    ['sl-pe','100','lbl-pe'], ['sl-pb','20','lbl-pb'],
+    // 技术面
     ['sl-vol','1.0','lbl-vol',true], ['sl-vcp','60','lbl-vcp'],
+    ['sl-rsi-min','0','lbl-rsi-min'], ['sl-rsi-max','100','lbl-rsi-max'],
+    ['sl-vix','50','lbl-vix'],
   ];
   defs.forEach(([id, def, lbl, isFloat]) => {
     const el = document.getElementById(id);
@@ -3280,11 +3423,17 @@ function resetSepaVcp() {
     if (el) el.value = isFloat ? parseFloat(def).toFixed(1) : def;
     if (lblEl) lblEl.textContent = isFloat ? def : def;
   });
-  document.getElementById('sl-ma50').checked = false;
-  document.getElementById('sl-ma150').checked = false;
-  document.querySelectorAll('.mkt-btn').forEach(b => b.classList.remove('active'));
-  const both = document.querySelector('.mkt-btn[data-val="both"]');
-  if (both) both.classList.add('active');
+  // 重置复选框
+  document.getElementById('sl-ma50').checked = true;
+  document.getElementById('sl-ma150').checked = true;
+  document.getElementById('sl-ma200').checked = false;
+  document.getElementById('sl-vix-calm').checked = false;
+  // 重置下拉框
+  document.getElementById('sl-north-dir').value = 'all';
+  document.getElementById('sl-south-dir').value = 'all';
+  // 重置市场选择
+  document.getElementById('market-select').value = 'both';
+  // 重置显示
   document.getElementById('sepa-funnel-card').style.display = 'none';
   document.getElementById('sepa-result-card').style.display = 'none';
   document.getElementById('sepa-status').textContent = '';

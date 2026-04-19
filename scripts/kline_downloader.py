@@ -454,6 +454,7 @@ def main():
     print(f"📊 共 {len(symbols)} 只股票")
 
     lock_print = __import__('threading').Lock()
+    index = None  # 初始化index变量为None
 
     def worker(symbol):
         try:
