@@ -192,9 +192,10 @@ def download_hk_financial(code, force=False):
         # 依次 join（自动按 index=REPORT_DATE 对齐）
         merged = dfs[0]
         for df_wide in dfs[1:]:
-            merged = merged.join(df_wide, how='outer')
+            if df_wide is not None and not df_wide.empty:
+                merged = merged.join(df_wide, how='outer')
 
-        if merged.empty:
+        if merged is None or merged.empty:
             return code, 'empty', None
 
         # 按日期倒序
@@ -223,6 +224,10 @@ def _download_hk_statement(hk_code, stype):
         if df is None or df.empty:
             return stype, None
 
+        # 检查必要的列是否存在
+        if 'REPORT_DATE' not in df.columns or 'STD_ITEM_NAME' not in df.columns or 'AMOUNT' not in df.columns:
+            return stype, None
+
         # 长表 → 宽表：每行一个日期，每列一个指标
         df_wide = df.pivot_table(
             index='REPORT_DATE',
@@ -230,6 +235,10 @@ def _download_hk_statement(hk_code, stype):
             values='AMOUNT',
             aggfunc='first'
         )
+        
+        if df_wide is None or df_wide.empty:
+            return stype, None
+            
         # 添加前缀
         df_wide.columns = [prefix + c for c in df_wide.columns]
         return stype, df_wide
@@ -250,32 +259,11 @@ def main():
 
     force = args.force
     stocks = get_stock_list()
-    cn_list = [s for s in stocks if s['market'] == 'CN']
     hk_list = [s for s in stocks if s['market'] == 'HK']
-    print(f"股票列表: A股 {len(cn_list)} 只 | 港股 {len(hk_list)} 只")
-
-    # ── A 股 ──
-    print(f"\n[1/2] A 股财务数据（按报告期，字段扩展）...")
-    todo_cn = [s for s in cn_list if should_update(f"{FIN_CN}/{s['code']}.csv", force=force)]
-    skip_cn = len(cn_list) - len(todo_cn)
-    print(f"  待下载: {len(todo_cn)} | 跳过（已存在/新鲜）: {skip_cn}")
-
-    ok_cn = fail_cn = empty_cn = 0
-    for i in range(0, len(todo_cn), 200):
-        batch = todo_cn[i:i+200]
-        with ThreadPoolExecutor(max_workers=args.workers) as ex:
-            futures = {ex.submit(download_cn_financial, s['code'], s.get('suffix','SH'), force): s
-                       for s in batch}
-            for f in as_completed(futures):
-                code, status, nrows = f.result()
-                if status == 'ok':   ok_cn += 1
-                elif status == 'empty': empty_cn += 1
-                else: fail_cn += 1
-        print(f"  进度: {min(i+200, len(todo_cn))}/{len(todo_cn)}  |  成功:{ok_cn}  空:{empty_cn}  失败:{fail_cn}")
-        time.sleep(0.3)
+    print(f"股票列表: 港股 {len(hk_list)} 只")
 
     # ── 港股（年报三表合并） ──
-    print(f"\n[2/2] 港股财务数据（年度三表合并，2001年至今）...")
+    print(f"\n[1/1] 港股财务数据（年度三表合并，2001年至今）...")
     todo_hk = [s for s in hk_list if should_update(f"{FIN_HK}/{s['code']}.csv", force=force)]
     skip_hk = len(hk_list) - len(todo_hk)
     print(f"  待下载: {len(todo_hk)} | 跳过（已存在/新鲜）: {skip_hk}")
@@ -296,10 +284,8 @@ def main():
 
     # ── 摘要 ──
     print(f"\n{'='*50}")
-    print(f"  A 股: 成功 {ok_cn} | 空 {empty_cn} | 失败 {fail_cn}")
     print(f"  港股: 成功 {ok_hk} | 空 {empty_hk} | 失败 {fail_hk}")
     print(f"  数据目录:")
-    print(f"    A 股: {FIN_CN}")
     print(f"    港股: {FIN_HK}")
     print(f"{'='*50}")
 

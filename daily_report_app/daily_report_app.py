@@ -691,7 +691,7 @@ def enrich_names_sectors(results, cfg=None):
 # ============================================================================
 # 选股系统核心（统一多条件筛选）
 # ============================================================================
-def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
+def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int], Dict[str, List[str]]]:
     """
     统一选股引擎，支持技术面+基本面+资金面+估值面+情绪面
     params:
@@ -718,11 +718,11 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
         # 情绪面
         vix_max: float | None
         vix_calm: bool
-    返回: (结果列表, 漏斗计数dict)
+    返回: (结果列表, 漏斗计数dict, 单条件命中股票dict)
     """
     p = params or {}
     market = p.get("market", "all")
-    hk_fin_dir = p.get("hk_fin_dir", "")
+    hk_fin_dir = p.get("hk_fin_dir", "/Users/tonyleung/Downloads/股票/港股/财报")
     # 加载K线
     hk_stocks = {}
     a_stocks = {}
@@ -765,12 +765,30 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
     # 名称映射
     name_map = _load_name_map()
 
-    results = []
-    funnel = {"total": 0, "ma50": 0, "ma150": 0, "vol_ratio": 0, "vcp": 0, "fundamental": 0, "rev_yoy": 0, "profit_yoy": 0, "profit_qoq": 0, "roe": 0, "cagr_3y": 0, "final": 0}
+    # 初始化单条件命中股票集合
+    condition_hits = {
+        "ma50": [],
+        "ma150": [],
+        "ma200": [],
+        "vol_ratio": [],
+        "vcp": [],
+        "rev_yoy": [],
+        "profit_yoy": [],
+        "roe": [],
+        "cagr_3y": [],
+        "pe": [],
+        "pb": [],
+        "rsi_min": [],
+        "rsi_max": [],
+        "north": [],
+        "south": [],
+        "vix_max": [],
+        "vix_calm": [],
+    }
 
     # 扫描港股
+    hk_results = []
     for code, kl in hk_stocks.items():
-        funnel["total"] += 1
         
         # 次新股筛选：上市不满1年（K线数据少于250个交易日）- 可选
         if p.get("exclude_new_stock") and len(kl) < 250:
@@ -785,12 +803,12 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
         ma150_ok = not p.get("ma150_above") or (snap.get("ma50") and (snap.get("ma150") is not None and snap["ma50"] > snap["ma150"]) or len(kl) < 150)
         ma200_ok = not p.get("ma200_above") or (snap.get("ma200") is None or snap["close"] > snap["ma200"])
         
-        # 量比筛选 - 可选
+        # 量比筛选 - 可选（只要参数存在就应用）
         vol_ok = True
         if "min_vol_ratio" in p:
             vol_ok = vcp["volume_ratio"] >= p["min_vol_ratio"]
         
-        # VCP评分筛选 - 可选
+        # VCP评分筛选 - 可选（只要参数存在就应用）
         vcp_ok = True
         if "min_vcp_score" in p:
             vcp_ok = vcp["vcp_score"] >= p["min_vcp_score"]
@@ -800,62 +818,35 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
         rsi_min = p.get("rsi_min")
         rsi_ok = (rsi_max is None or (rsi is not None and rsi <= rsi_max)) and (rsi_min is None or (rsi is not None and rsi >= rsi_min))
         
-        # 追踪每个过滤器单独通过的数量
-        if ma50_ok:   funnel["ma50"] += 1
-        if ma150_ok:  funnel["ma150"] += 1
-        if vol_ok:    funnel["vol_ratio"] += 1
-        if vcp_ok:    funnel["vcp"] += 1
-        
-        if not (ma50_ok and ma150_ok and vol_ok and vcp_ok and rsi_ok):
-            continue
-
         # 基本面筛选 - 只有明确设置的条件才应用
         fin_ok = True
         rev_yoy_ok = True
         profit_yoy_ok = True
-        profit_qoq_ok = True
         roe_ok = True
         cagr_3y_ok = True
         
         if fin:
-            # 营业收入同比增长率 - 可选
+            # 营业收入同比增长率 - 可选（只要参数存在就应用）
             if "min_rev_yoy" in p:
                 rev_yoy_ok = (fin.get("revenue_yoy", 0) or 0) >= p["min_rev_yoy"]
                 if not rev_yoy_ok:
                     fin_ok = False
-            # 净利润同比增长率 - 可选
+            # 净利润同比增长率 - 可选（只要参数存在就应用）
             if "min_profit_yoy" in p:
                 profit_yoy_ok = (fin.get("net_profit_yoy", 0) or 0) >= p["min_profit_yoy"]
                 if not profit_yoy_ok:
                     fin_ok = False
-            # 净利润环比增长为正 - 可选（如果有数据）
-            if "min_profit_qoq" in p and fin.get("net_profit_qoq") is not None:
-                profit_qoq_ok = (fin.get("net_profit_qoq", 0) or 0) > 0
-                if not profit_qoq_ok:
-                    fin_ok = False
-            # ROE - 可选
+            # ROE - 可选（只要参数存在就应用）
             if "min_roe" in p:
                 roe_ok = (fin.get("roe", 0) or 0) >= p["min_roe"]
                 if not roe_ok:
                     fin_ok = False
-            # 3年CAGR - 可选
+            # 3年CAGR - 可选（只要参数存在就应用）
             if "min_cagr" in p:
                 cagr_3y_ok = (fin.get("cagr_3y", 0) or 0) >= p["min_cagr"]
                 if not cagr_3y_ok:
                     fin_ok = False
-        # 当没有财务数据时，默认通过基本面筛选
-        
-        # 追踪每个基本面条件的命中数量
-        if rev_yoy_ok:   funnel["rev_yoy"] += 1
-        if profit_yoy_ok: funnel["profit_yoy"] += 1
-        if profit_qoq_ok: funnel["profit_qoq"] += 1
-        if roe_ok:        funnel["roe"] += 1
-        if cagr_3y_ok:    funnel["cagr_3y"] += 1
-        
-        if not fin_ok:
-            continue
-            
-        funnel["fundamental"] += 1
+        # 当没有财务数据时，默认通过基本面筛选（只有当有条件被设置时才需要检查）
 
         # 资金面（港股跳过南北资金过滤）- 可选
         nd = p.get("north_dir", "all")
@@ -864,14 +855,57 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
         sd = p.get("south_dir", "all")
         sd_all = sd == "all" or sd is None or "south_dir" not in p
         south_ok = sd_all or (south_buy is not None and (sd == "buy") == (south_buy > 0))
-        if not (north_ok and south_ok):
-            continue
 
         # 情绪面（港股跳过VIX过滤，由全局vix_val/vix_calm控制）
+        vix_ok = True
+        vix_calm_ok = True
+        if "vix_max" in p or "vix_calm" in p:
+            vix_ok = p.get("vix_max") is None or (vix_val is not None and vix_val <= p.get("vix_max")) or vix_val is None
+            vix_calm_ok = not p.get("vix_calm", False) or vix_calm or vix_val is None
 
-        funnel["final"] += 1
-        results.append({
-            "code": code + ".HK",
+        # 记录单条件命中情况
+        stock_code = code + ".HK"
+        if p.get("ma50_above") and ma50_ok:
+            condition_hits["ma50"].append(stock_code)
+        if p.get("ma150_above") and ma150_ok:
+            condition_hits["ma150"].append(stock_code)
+        if p.get("ma200_above") and ma200_ok:
+            condition_hits["ma200"].append(stock_code)
+        if "min_vol_ratio" in p and vol_ok:
+            condition_hits["vol_ratio"].append(stock_code)
+        if "min_vcp_score" in p and vcp_ok:
+            condition_hits["vcp"].append(stock_code)
+        if "min_rev_yoy" in p and rev_yoy_ok:
+            condition_hits["rev_yoy"].append(stock_code)
+        if "min_profit_yoy" in p and profit_yoy_ok:
+            condition_hits["profit_yoy"].append(stock_code)
+        if "min_roe" in p and roe_ok:
+            condition_hits["roe"].append(stock_code)
+        if "min_cagr" in p and cagr_3y_ok:
+            condition_hits["cagr_3y"].append(stock_code)
+        if "max_pe" in p and pe_ok:
+            condition_hits["pe"].append(stock_code)
+        if "max_pb" in p and pb_ok:
+            condition_hits["pb"].append(stock_code)
+        if "min_rsi" in p and rsi_min_ok:
+            condition_hits["rsi_min"].append(stock_code)
+        if "max_rsi" in p and rsi_max_ok:
+            condition_hits["rsi_max"].append(stock_code)
+        if "north_dir" in p and north_ok:
+            condition_hits["north"].append(stock_code)
+        if "south_dir" in p and south_ok:
+            condition_hits["south"].append(stock_code)
+        if "vix_max" in p and vix_ok:
+            condition_hits["vix_max"].append(stock_code)
+        if "vix_calm" in p and vix_calm_ok:
+            condition_hits["vix_calm"].append(stock_code)
+
+        # 检查是否满足所有条件
+        if not (ma50_ok and ma150_ok and vol_ok and vcp_ok and rsi_ok and fin_ok and north_ok and south_ok and vix_ok and vix_calm_ok):
+            continue
+
+        hk_results.append({
+            "code": stock_code,
             "name": name_map.get(code, code),
             "market": "港股",
             "vcp_score": vcp["vcp_score"],
@@ -897,10 +931,9 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
             "vix": vix_val,
         })
 
-
     # 扫描A股
+    a_results = []
     for code, kl in a_stocks.items():
-        funnel["total"] += 1
         
         # 次新股筛选：上市不满1年（K线数据少于250个交易日）- 可选
         if p.get("exclude_new_stock") and len(kl) < 250:
@@ -918,12 +951,12 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
         ma150_ok = not p.get("ma150_above") or (snap.get("ma50") and (snap.get("ma150") is not None and snap["ma50"] > snap["ma150"]) or len(kl) < 150)
         ma200_ok = not p.get("ma200_above") or (snap.get("ma200") is None or snap["close"] > snap["ma200"])
         
-        # 量比筛选 - 可选
+        # 量比筛选 - 可选（只要参数存在就应用）
         vol_ok = True
         if "min_vol_ratio" in p:
             vol_ok = vcp["volume_ratio"] >= p["min_vol_ratio"]
         
-        # VCP评分筛选 - 可选
+        # VCP评分筛选 - 可选（只要参数存在就应用）
         vcp_ok = True
         if "min_vcp_score" in p:
             vcp_ok = vcp["vcp_score"] >= p["min_vcp_score"]
@@ -932,38 +965,57 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
         rsi_max = p.get("rsi_max")
         rsi_min = p.get("rsi_min")
         rsi_ok = (rsi_max is None or (rsi is not None and rsi <= rsi_max)) and (rsi_min is None or (rsi is not None and rsi >= rsi_min))
-        
-        # 追踪每个过滤器单独通过的数量
-        if ma50_ok:   funnel["ma50"] += 1
-        if ma150_ok:  funnel["ma150"] += 1
-        if vol_ok:    funnel["vol_ratio"] += 1
-        if vcp_ok:    funnel["vcp"] += 1
-        if rsi_ok:    funnel["rsi"] = funnel.get("rsi", 0) + 1
-        
-        if not (ma50_ok and ma150_ok and vol_ok and vcp_ok and rsi_ok):
-            continue
 
         # A股无南北资金/基本面数据，默认通过 - 可选
+        north_ok = True
         if "north_dir" in p:
             north_ok = p.get("north_dir") == "all"
-            if not north_ok:
-                continue
+        
+        south_ok = True
         if "south_dir" in p:
             south_ok = p.get("south_dir") == "all"
-            if not south_ok:
-                continue
 
         # 情绪面（A股） - 可选
+        vix_ok = True
+        vix_calm_ok = True
         if "vix_max" in p or "vix_calm" in p:
             vix_ok = p.get("vix_max") is None or (vix_val is not None and vix_val <= p.get("vix_max")) or vix_val is None
             vix_calm_ok = not p.get("vix_calm", False) or vix_calm or vix_val is None
-            if not (vix_ok and vix_calm_ok):
-                continue
 
-        # A股默认通过基本面筛选
-        funnel["fundamental"] += 1
-        funnel["final"] += 1
-        results.append({
+        # 记录单条件命中情况
+        stock_code = code
+        if p.get("ma50_above") and ma50_ok:
+            condition_hits["ma50"].append(stock_code)
+        if p.get("ma150_above") and ma150_ok:
+            condition_hits["ma150"].append(stock_code)
+        if p.get("ma200_above") and ma200_ok:
+            condition_hits["ma200"].append(stock_code)
+        if "min_vol_ratio" in p and vol_ok:
+            condition_hits["vol_ratio"].append(stock_code)
+        if "min_vcp_score" in p and vcp_ok:
+            condition_hits["vcp"].append(stock_code)
+        if "max_pe" in p and pe_ok:
+            condition_hits["pe"].append(stock_code)
+        if "max_pb" in p and pb_ok:
+            condition_hits["pb"].append(stock_code)
+        if "min_rsi" in p and rsi_min_ok:
+            condition_hits["rsi_min"].append(stock_code)
+        if "max_rsi" in p and rsi_max_ok:
+            condition_hits["rsi_max"].append(stock_code)
+        if "north_dir" in p and north_ok:
+            condition_hits["north"].append(stock_code)
+        if "south_dir" in p and south_ok:
+            condition_hits["south"].append(stock_code)
+        if "vix_max" in p and vix_ok:
+            condition_hits["vix_max"].append(stock_code)
+        if "vix_calm" in p and vix_calm_ok:
+            condition_hits["vix_calm"].append(stock_code)
+
+        # 检查是否满足所有条件
+        if not (ma50_ok and ma150_ok and vol_ok and vcp_ok and rsi_ok and north_ok and south_ok and vix_ok and vix_calm_ok):
+            continue
+
+        a_results.append({
             "code": code,
             "name": code,
             "market": "A股",
@@ -985,12 +1037,33 @@ def run_screening(params: Dict) -> Tuple[List[Dict], Dict[str, int]]:
             "vix": vix_val,
         })
 
+    # 合并结果
+    results = hk_results + a_results
+    
     # 排序：VCP评分降序
     results.sort(key=lambda x: x["vcp_score"], reverse=True)
-    # 不要覆盖vcp计数
-    # funnel["vcp"] = funnel["final"]
+    
+    # 生成漏斗计数
+    funnel = {"total": len(hk_stocks) + len(a_stocks), "final": len(results)}
+    for condition, hits in condition_hits.items():
+        funnel[condition] = len(hits)
+    
+    # 处理基本面计数
+    has_fundamental_conditions = any(key in p for key in ["min_rev_yoy", "min_profit_yoy", "min_roe", "min_cagr"])
+    if has_fundamental_conditions:
+        # 计算基本面条件的命中数量
+        fundamental_hits = set()
+        for condition in ["rev_yoy", "profit_yoy", "roe", "cagr_3y"]:
+            if condition in condition_hits:
+                fundamental_hits.update(condition_hits[condition])
+        funnel["fundamental"] = len(fundamental_hits)
+    else:
+        funnel["fundamental"] = 0
+
+    # 丰富名称和板块信息
     results = enrich_names_sectors(results)
-    return results, funnel
+    
+    return results, funnel, condition_hits
 def _qq_fetch(url: str, timeout: int = 8) -> Optional[str]:
     if not REQUESTS_OK:
         return None
@@ -1773,8 +1846,10 @@ async def api_scan(market: str = "all", signal: str = "全部"):
 async def api_screening(params: Optional[Dict[str, Any]] = None):
     """统一选股API，支持技术面+基本面+资金面+情绪面多条件"""
     try:
-        results, funnel = run_screening(params or {})
-        return JSONResponse({"total": len(results), "results": results, "funnel": funnel})
+        results, funnel, condition_hits = run_screening(params or {})
+        # 转换condition_hits为只包含数量的格式，用于前端显示
+        condition_counts = {k: len(v) for k, v in condition_hits.items()}
+        return JSONResponse({"total": len(results), "results": results, "funnel": funnel, "condition_hits": condition_hits, "condition_counts": condition_counts})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1845,8 +1920,10 @@ async def api_screen(params: Optional[Dict[str, Any]] = None):
         if "vix_calm" in sentiment:
             converted["vix_calm"] = sentiment["vix_calm"]
         
-        results, funnel = run_screening(converted)
-        return JSONResponse({"total": len(results), "results": results, "stage_counts": funnel})
+        results, funnel, condition_hits = run_screening(converted)
+        # 转换condition_hits为只包含数量的格式，用于前端显示
+        condition_counts = {k: len(v) for k, v in condition_hits.items()}
+        return JSONResponse({"total": len(results), "results": results, "stage_counts": funnel, "condition_hits": condition_hits, "condition_counts": condition_counts})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1963,6 +2040,13 @@ header .logo {
 }
 
 header .logo span { color: var(--text-dim); font-weight: 400; }
+
+header .update-time {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-left: auto;
+  margin-right: 20px;
+}
 
 /* ── Tab 导航栏 ───────────────────────────── */
 .tabs {
@@ -2538,6 +2622,7 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
 
 <header>
   <div class="logo">🐾 哮天 <span>每日收盘报告</span></div>
+  <div class="update-time" id="update-time">最后更新: <script>document.write(new Date().toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'}))</script></div>
   <div class="tabs">
     <button class="tab active" data-tab="dashboard" onclick="switchTab(this)">📊 Dashboard</button>
     <button class="tab" data-tab="screening" onclick="switchTab(this)">🎯 SEPA × VCP</button>
@@ -2652,32 +2737,32 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
         <div style="font-size:0.65em;color:var(--text-dim);letter-spacing:1px;margin:8px 0 6px;text-transform:uppercase">基本面</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
           <div>
-            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-rev-check" checked> 营收 YoY &gt; <span class="val-badge" id="lbl-rev">25</span>%</label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-rev-check" checked> 1. 营收 YoY &gt; <span class="val-badge" id="lbl-rev">25</span>%</label>
             <input type="range" id="sl-rev" min="0" max="80" value="25" step="5"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-rev')">
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-prof-check" checked> 净利 YoY &gt; <span class="val-badge" id="lbl-prof">30</span>%</label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-prof-check" checked> 2. 净利 YoY &gt; <span class="val-badge" id="lbl-prof">30</span>%</label>
             <input type="range" id="sl-prof" min="0" max="100" value="30" step="5"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-prof')">
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-roe-check" checked> ROE &gt; <span class="val-badge" id="lbl-roe">15</span>%</label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-roe-check" checked> 3. ROE &gt; <span class="val-badge" id="lbl-roe">15</span>%</label>
             <input type="range" id="sl-roe" min="0" max="40" value="15" step="1"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-roe')">
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-cagr-check" checked> 3年CAGR &gt; <span class="val-badge" id="lbl-cagr">20</span>%</label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-cagr-check" checked> 4. 3年CAGR &gt; <span class="val-badge" id="lbl-cagr">20</span>%</label>
             <input type="range" id="sl-cagr" min="0" max="60" value="20" step="5"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-cagr')">
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-pe-check" checked> PE &lt; <span class="val-badge" id="lbl-pe">100</span></label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-pe-check" checked> 5. PE &lt; <span class="val-badge" id="lbl-pe">100</span></label>
             <input type="range" id="sl-pe" min="0" max="100" value="100" step="5"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-pe')">
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-pb-check" checked> PB &lt; <span class="val-badge" id="lbl-pb">20</span></label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-pb-check" checked> 6. PB &lt; <span class="val-badge" id="lbl-pb">20</span></label>
             <input type="range" id="sl-pb" min="0" max="20" value="20" step="1"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-pb')">
           </div>
@@ -2686,22 +2771,22 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
         <div style="font-size:0.65em;color:var(--text-dim);letter-spacing:1px;margin:8px 0 6px;text-transform:uppercase">技术面</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
           <div>
-            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-vol-check" checked> 量比(10日/120日) &gt; <span class="val-badge" id="lbl-vol">1.0</span>x</label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-vol-check" checked> 7. 量比(10日/120日) &gt; <span class="val-badge" id="lbl-vol">1.0</span>x</label>
             <input type="range" id="sl-vol" min="0.5" max="5" value="1.0" step="0.1"
               style="width:100%;accent-color:var(--accent)" oninput="syncSliderFloat(this,'lbl-vol')">
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-vcp-check" checked> VCP评分 &ge; <span class="val-badge" id="lbl-vcp">60</span>分</label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-vcp-check" checked> 8. VCP评分 &ge; <span class="val-badge" id="lbl-vcp">60</span>分</label>
             <input type="range" id="sl-vcp" min="20" max="100" value="60" step="5"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-vcp')">
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-rsi-min-check" checked> RSI(14) &gt; <span class="val-badge" id="lbl-rsi-min">0</span></label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-rsi-min-check" checked> 9. RSI(14) &gt; <span class="val-badge" id="lbl-rsi-min">0</span></label>
             <input type="range" id="sl-rsi-min" min="0" max="70" value="0" step="5"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-rsi-min')">
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-rsi-max-check" checked> RSI(14) &lt; <span class="val-badge" id="lbl-rsi-max">100</span></label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-rsi-max-check" checked> 10. RSI(14) &lt; <span class="val-badge" id="lbl-rsi-max">100</span></label>
             <input type="range" id="sl-rsi-max" min="30" max="100" value="100" step="5"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-rsi-max')">
           </div>
@@ -2709,30 +2794,30 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
         <div style="margin-top:6px">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text)">
             <input type="checkbox" id="sl-ma50-check" checked style="accent-color:var(--accent)">
-            要求股价 &gt; 50日均线(MA50)
+            11. 要求股价 &gt; 50日均线(MA50)
           </label>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text);margin-top:4px">
             <input type="checkbox" id="sl-ma150-check" checked style="accent-color:var(--accent)">
-            要求 MA50 &gt; 150日均线(MA150)，即均线多头排列
+            12. 要求 MA50 &gt; 150日均线(MA150)，即均线多头排列
           </label>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text);margin-top:4px">
             <input type="checkbox" id="sl-ma200-check" style="accent-color:var(--accent)">
-            要求股价 &gt; 200日均线(MA200)，即长期趋势向上
+            13. 要求股价 &gt; 200日均线(MA200)，即长期趋势向上
           </label>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text);margin-top:4px">
             <input type="checkbox" id="sl-new-stock-check" checked style="accent-color:var(--accent)">
-            剔除上市不满1年的次新股（K线数据少于250个交易日）
+            14. 剔除上市不满1年的次新股（K线数据少于250个交易日）
           </label>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text);margin-top:4px">
             <input type="checkbox" id="sl-exclude-st-check" checked style="accent-color:var(--accent)">
-            剔除ST股票（A股）
+            15. 剔除ST股票（A股）
           </label>
         </div>
 
         <div style="font-size:0.65em;color:var(--text-dim);letter-spacing:1px;margin:8px 0 6px;text-transform:uppercase">资金面</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
           <div>
-            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-north-check" checked> 北向资金方向</label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-north-check" checked> 16. 北向资金方向</label>
             <select id="sl-north-dir" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);font-size:0.75em;margin-top:4px">
               <option value="all">全部</option>
               <option value="buy">净买入</option>
@@ -2740,7 +2825,7 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
             </select>
           </div>
           <div>
-            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-south-check" checked> 南向资金方向</label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-south-check" checked> 17. 南向资金方向</label>
             <select id="sl-south-dir" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);font-size:0.75em;margin-top:4px">
               <option value="all">全部</option>
               <option value="buy">净买入</option>
@@ -2752,14 +2837,14 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
         <div style="font-size:0.65em;color:var(--text-dim);letter-spacing:1px;margin:8px 0 6px;text-transform:uppercase">情绪面</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
           <div>
-            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-vix-check" checked> VIX &lt; <span class="val-badge" id="lbl-vix">50</span></label>
+            <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="sl-vix-check" checked> 18. VIX &lt; <span class="val-badge" id="lbl-vix">50</span></label>
             <input type="range" id="sl-vix" min="10" max="50" value="50" step="2"
               style="width:100%;accent-color:var(--accent)" oninput="syncSlider(this,'lbl-vix')">
           </div>
           <div style="display:flex;align-items:flex-end">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text)">
               <input type="checkbox" id="sl-vix-calm-check" style="accent-color:var(--accent)">
-              要求VIX &lt; 25（市场平静）
+              19. 要求VIX &lt; 25（市场平静）
             </label>
           </div>
         </div>
@@ -2768,7 +2853,8 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
       <!-- ── 按钮 ── -->
       <div style="display:flex;gap:10px;margin-bottom:14px">
         <button id="btn-run" onclick="runSepaVcp()" style="flex:1;padding:12px;border-radius:8px;border:none;background:var(--accent);color:#000;font-size:0.9em;font-weight:600;cursor:pointer">▶ 运行筛选</button>
-        <button onclick="resetSepaVcp()" style="padding:12px 16px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:0.85em;cursor:pointer">↺ 重置</button>
+        <button onclick="resetSepaVcp()" style="padding:12px 16px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:0.85em;cursor:pointer;margin-right:8px">↺ 重置</button>
+        <button onclick="clearSepaVcp()" style="padding:12px 16px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:0.85em;cursor:pointer">🗑️ 清空</button>
         <button onclick="exportSepaCsv()" style="padding:12px 16px;border-radius:8px;border:1px solid var(--border);background:var(--bg-card);color:var(--accent);font-size:0.85em;cursor:pointer">💾 导出</button>
       </div>
       <div id="sepa-status" style="font-size:0.78em;min-height:18px;margin-bottom:10px"></div>
@@ -2827,13 +2913,13 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
           <span>📈 技术面</span><span class="section-count">已选 0 项</span><span class="toggle-icon">▼</span>
         </div>
         <div class="filter-body">
-          <label class="filter-check"><input type="checkbox" id="s-ma50"> MA50在价格上方</label>
-          <label class="filter-check"><input type="checkbox" id="s-ma150"> MA150在价格上方</label>
-          <label class="filter-check"><input type="checkbox" id="s-ma200"> MA200在价格上方</label>
-          <div class="filter-row"><span>量比 ≥</span><input type="number" id="s-vol-ratio" value="0.5" min="0" step="0.1" style="width:60px"></div>
-          <div class="filter-row"><span>VCP评分 ≥</span><input type="number" id="s-vcp" value="30" min="0" max="100" style="width:60px"></div>
-          <div class="filter-row"><span>RSI ≤</span><input type="number" id="s-rsi-max" value="70" min="30" max="100" style="width:60px"></div>
-          <div class="filter-row"><span>RSI ≥</span><input type="number" id="s-rsi-min" placeholder="不限" min="0" max="100" style="width:60px"></div>
+          <label class="filter-check"><input type="checkbox" id="s-ma50"> 1. MA50在价格上方</label>
+          <label class="filter-check"><input type="checkbox" id="s-ma150"> 2. MA150在价格上方</label>
+          <label class="filter-check"><input type="checkbox" id="s-ma200"> 3. MA200在价格上方</label>
+          <div class="filter-row"><span>4. 量比 ≥</span><input type="number" id="s-vol-ratio" value="0.5" min="0" step="0.1" style="width:60px"></div>
+          <div class="filter-row"><span>5. VCP评分 ≥</span><input type="number" id="s-vcp" value="30" min="0" max="100" style="width:60px"></div>
+          <div class="filter-row"><span>6. RSI ≤</span><input type="number" id="s-rsi-max" value="70" min="30" max="100" style="width:60px"></div>
+          <div class="filter-row"><span>7. RSI ≥</span><input type="number" id="s-rsi-min" placeholder="不限" min="0" max="100" style="width:60px"></div>
         </div>
       </div>
 
@@ -2842,10 +2928,10 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
           <span>📊 基本面</span><span class="section-count">已选 0 项</span><span class="toggle-icon">▼</span>
         </div>
         <div class="filter-body">
-          <div class="filter-row"><label><input type="checkbox" id="s-rev-yoy-check" checked> 营收增速 YoY ≥</label><input type="number" id="s-rev-yoy" value="25" min="0" max="100" style="width:60px">%</div>
-          <div class="filter-row"><label><input type="checkbox" id="s-profit-yoy-check" checked> 净利润增速 YoY ≥</label><input type="number" id="s-profit-yoy" value="30" min="0" max="100" style="width:60px">%</div>
-          <div class="filter-row"><label><input type="checkbox" id="s-roe-check" checked> ROE ≥</label><input type="number" id="s-roe" value="10" min="0" max="50" style="width:60px">%</div>
-          <div class="filter-row"><label><input type="checkbox" id="s-cagr-check" checked> 3年CAGR ≥</label><input type="number" id="s-cagr" value="20" min="0" max="100" style="width:60px">%</div>
+          <div class="filter-row"><label><input type="checkbox" id="s-rev-yoy-check" checked> 8. 营收增速 YoY ≥</label><input type="number" id="s-rev-yoy" value="25" min="0" max="100" style="width:60px">%</div>
+          <div class="filter-row"><label><input type="checkbox" id="s-profit-yoy-check" checked> 9. 净利润增速 YoY ≥</label><input type="number" id="s-profit-yoy" value="30" min="0" max="100" style="width:60px">%</div>
+          <div class="filter-row"><label><input type="checkbox" id="s-roe-check" checked> 10. ROE ≥</label><input type="number" id="s-roe" value="10" min="0" max="50" style="width:60px">%</div>
+          <div class="filter-row"><label><input type="checkbox" id="s-cagr-check" checked> 11. 3年CAGR ≥</label><input type="number" id="s-cagr" value="20" min="0" max="100" style="width:60px">%</div>
         </div>
       </div>
 
@@ -2854,8 +2940,8 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
           <span>💰 资金面</span><span class="section-count">已选 0 项</span><span class="toggle-icon">▼</span>
         </div>
         <div class="filter-body">
-          <div class="filter-row"><span>北向资金：</span><select id="s-north-dir" style="width:90px"><option value="all">全部</option><option value="buy">净买入</option><option value="sell">净卖出</option></select></div>
-          <div class="filter-row"><span>南向资金：</span><select id="s-south-dir" style="width:90px"><option value="all">全部</option><option value="buy">净买入</option><option value="sell">净卖出</option></select></div>
+          <div class="filter-row"><span>12. 北向资金：</span><select id="s-north-dir" style="width:90px"><option value="all">全部</option><option value="buy">净买入</option><option value="sell">净卖出</option></select></div>
+          <div class="filter-row"><span>13. 南向资金：</span><select id="s-south-dir" style="width:90px"><option value="all">全部</option><option value="buy">净买入</option><option value="sell">净卖出</option></select></div>
         </div>
       </div>
 
@@ -2864,14 +2950,15 @@ header .logo span { color: var(--text-dim); font-weight: 400; }
           <span>🌊 情绪面</span><span class="section-count">已选 0 项</span><span class="toggle-icon">▼</span>
         </div>
         <div class="filter-body">
-          <div class="filter-row"><span>VIX ≤</span><input type="number" id="s-vix-max" placeholder="不限" min="0" max="100" style="width:60px"></div>
-          <label class="filter-check"><input type="checkbox" id="s-vix-calm"> 仅VIX平静（≤25）</label>
+          <div class="filter-row"><span>14. VIX ≤</span><input type="number" id="s-vix-max" placeholder="不限" min="0" max="100" style="width:60px"></div>
+          <label class="filter-check"><input type="checkbox" id="s-vix-calm"> 15. 仅VIX平静（≤25）</label>
         </div>
       </div>
 
       <div style="display:flex;gap:10px;padding:10px 0">
         <button onclick="runScreening()" style="background:var(--accent);color:#000;font-weight:700;border:none;border-radius:6px;padding:9px 24px;cursor:pointer;font-size:14px">🔍 开始选股</button>
-        <button onclick="resetScreening()" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:9px 16px;cursor:pointer;font-size:13px">重置</button>
+        <button onclick="resetScreening()" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:9px 16px;cursor:pointer;font-size:13px;margin-right:8px">重置</button>
+        <button onclick="clearScreening()" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:9px 16px;cursor:pointer;font-size:13px">清空</button>
         <button id="export-csv-btn" onclick="exportScreeningCSV()" style="display:none;background:var(--bg-card);color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:9px 16px;cursor:pointer;font-size:13px">📥 导出CSV</button>
       </div>
     </div>
@@ -3464,32 +3551,38 @@ function renderSepaFunnel(sc) {
   const passed_ma150 = sc.ma150 || 0;
   const passed_vol = sc.vol_ratio || 0;
   const passed_vcp = sc.vcp || 0;
-  const passed_fundamental = sc.fundamental || 0;
   const passed_rev_yoy = sc.rev_yoy || 0;
   const passed_profit_yoy = sc.profit_yoy || 0;
-  const passed_profit_qoq = sc.profit_qoq || 0;
   const passed_roe = sc.roe || 0;
   const passed_cagr_3y = sc.cagr_3y || 0;
+  const passed_pe = sc.pe || 0;
+  const passed_pb = sc.pb || 0;
+  const passed_rsi_min = sc.rsi_min || 0;
+  const passed_rsi_max = sc.rsi_max || 0;
+  const passed_north = sc.north || 0;
+  const passed_south = sc.south || 0;
+  const passed_vix_max = sc.vix_max || 0;
+  const passed_vix_calm = sc.vix_calm || 0;
   const final = sc.final || 0;
   
-  const chips = [
-    { label:'总计', val: total },
-    { label:'通过MA50', val: passed_ma50, green: true },
-    { label:'通过MA150', val: passed_ma150, green: true },
-    { label:'通过量比', val: passed_vol, green: true },
-    { label:'通过VCP', val: passed_vcp, green: true },
-    { label:'通过基本面', val: passed_fundamental, green: true },
-    { label:'→ 营收同比', val: passed_rev_yoy, green: true },
-    { label:'→ 净利润同比', val: passed_profit_yoy, green: true },
-    { label:'→ 净利润环比', val: passed_profit_qoq, green: true },
-    { label:'→ ROE', val: passed_roe, green: true },
-    { label:'→ 3年CAGR', val: passed_cagr_3y, green: true },
-    { label:'最终通过', val: final, green: true },
-  ];
-  body.innerHTML = chips.map(c => {
-    const cls = c.green && c.val > 0 ? 'green' : '';
-    return '<div class="stat-chip' + (cls ? ' '+cls : '') + '">' + c.label + ' <b>' + (c.val || 0) + '</b></div>';
-  }).join('');
+  body.innerHTML = '<span class="funnel-step active">总计 ' + (total||0) + ' 只</span>' +
+    '<span class="funnel-step">1. 营收同比通过 ' + (passed_rev_yoy||0) + ' 只</span>' +
+    '<span class="funnel-step">2. 净利润同比通过 ' + (passed_profit_yoy||0) + ' 只</span>' +
+    '<span class="funnel-step">3. ROE通过 ' + (passed_roe||0) + ' 只</span>' +
+    '<span class="funnel-step">4. 3年CAGR通过 ' + (passed_cagr_3y||0) + ' 只</span>' +
+    '<span class="funnel-step">5. PE通过 ' + (passed_pe||0) + ' 只</span>' +
+    '<span class="funnel-step">6. PB通过 ' + (passed_pb||0) + ' 只</span>' +
+    '<span class="funnel-step">7. 量比通过 ' + (passed_vol||0) + ' 只</span>' +
+    '<span class="funnel-step">8. VCP通过 ' + (passed_vcp||0) + ' 只</span>' +
+    '<span class="funnel-step">9. RSI最小值通过 ' + (passed_rsi_min||0) + ' 只</span>' +
+    '<span class="funnel-step">10. RSI最大值通过 ' + (passed_rsi_max||0) + ' 只</span>' +
+    '<span class="funnel-step">11. MA50通过 ' + (passed_ma50||0) + ' 只</span>' +
+    '<span class="funnel-step">12. MA150通过 ' + (passed_ma150||0) + ' 只</span>' +
+    '<span class="funnel-step">16. 北向资金通过 ' + (passed_north||0) + ' 只</span>' +
+    '<span class="funnel-step">17. 南向资金通过 ' + (passed_south||0) + ' 只</span>' +
+    '<span class="funnel-step">18. VIX最大值通过 ' + (passed_vix_max||0) + ' 只</span>' +
+    '<span class="funnel-step">19. VIX平静通过 ' + (passed_vix_calm||0) + ' 只</span>' +
+    '<span class="funnel-step active">最终 ' + (final||0) + ' 只</span>';
 }
 
 function sortSepa(col) {
@@ -3581,6 +3674,108 @@ function resetSepaVcp() {
   document.getElementById('sl-north-check').checked = true;
   document.getElementById('sl-south-check').checked = true;
   document.getElementById('sl-vix-check').checked = true;
+  document.getElementById('sl-vix-calm-check').checked = false;
+  // 重置下拉框
+  document.getElementById('sl-north-dir').value = 'all';
+  document.getElementById('sl-south-dir').value = 'all';
+  // 重置市场选择
+  document.getElementById('market-select').value = 'both';
+  // 重置显示
+  document.getElementById('sepa-funnel-card').style.display = 'none';
+  document.getElementById('sepa-result-card').style.display = 'none';
+  document.getElementById('sepa-status').textContent = '';
+  sepaResults = [];
+}
+
+function clearSepaVcp() {
+  const defs = [
+    // 基本面
+    ['sl-rev','25','lbl-rev'], ['sl-prof','30','lbl-prof'],
+    ['sl-roe','15','lbl-roe'], ['sl-cagr','20','lbl-cagr'],
+    ['sl-pe','100','lbl-pe'], ['sl-pb','20','lbl-pb'],
+    // 技术面
+    ['sl-vol','1.0','lbl-vol',true], ['sl-vcp','60','lbl-vcp'],
+    ['sl-rsi-min','0','lbl-rsi-min'], ['sl-rsi-max','100','lbl-rsi-max'],
+    ['sl-vix','50','lbl-vix'],
+  ];
+  defs.forEach(([id, def, lbl, isFloat]) => {
+    const el = document.getElementById(id);
+    const lblEl = document.getElementById(lbl);
+    if (el) el.value = isFloat ? parseFloat(def).toFixed(1) : def;
+    if (lblEl) lblEl.textContent = isFloat ? def : def;
+  });
+  // 清空复选框
+  document.getElementById('sl-rev-check').checked = false;
+  document.getElementById('sl-prof-check').checked = false;
+  document.getElementById('sl-roe-check').checked = false;
+  document.getElementById('sl-cagr-check').checked = false;
+  document.getElementById('sl-pe-check').checked = false;
+  document.getElementById('sl-pb-check').checked = false;
+  document.getElementById('sl-vol-check').checked = false;
+  document.getElementById('sl-vcp-check').checked = false;
+  document.getElementById('sl-rsi-min-check').checked = false;
+  document.getElementById('sl-rsi-max-check').checked = false;
+  document.getElementById('sl-ma50-check').checked = false;
+  document.getElementById('sl-ma150-check').checked = false;
+  document.getElementById('sl-ma200-check').checked = false;
+  document.getElementById('sl-new-stock-check').checked = false;
+  document.getElementById('sl-exclude-st-check').checked = false;
+  document.getElementById('sl-north-check').checked = false;
+  document.getElementById('sl-south-check').checked = false;
+  document.getElementById('sl-vix-check').checked = false;
+  document.getElementById('sl-vix-calm-check').checked = false;
+  // 重置下拉框
+  document.getElementById('sl-north-dir').value = 'all';
+  document.getElementById('sl-south-dir').value = 'all';
+  // 重置市场选择
+  document.getElementById('market-select').value = 'both';
+  // 重置显示
+  document.getElementById('sepa-funnel-card').style.display = 'none';
+  document.getElementById('sepa-result-card').style.display = 'none';
+  document.getElementById('sepa-status').textContent = '';
+  sepaResults = [];
+}
+
+function clearScreening() {
+  // 清空所有条件
+  const defs = [
+    ['sl-rev-yoy', 10, 'sl-rev-val', true],
+    ['sl-prof-yoy', 10, 'sl-prof-val', true],
+    ['sl-roe', 5, 'sl-roe-val', true],
+    ['sl-cagr-3y', 15, 'sl-cagr-val', true],
+    ['sl-pe-max', 30, 'sl-pe-val', true],
+    ['sl-pb-max', 3, 'sl-pb-val', true],
+    ['sl-vol-ratio', 1.5, 'sl-vol-val', true],
+    ['sl-vcp-score', 70, 'sl-vcp-val', true],
+    ['sl-rsi-min', 30, 'sl-rsi-min-val', true],
+    ['sl-rsi-max', 70, 'sl-rsi-max-val', true],
+    ['sl-vix-max', 30, 'sl-vix-val', true],
+  ];
+  defs.forEach(([id, def, lbl, isFloat]) => {
+    const el = document.getElementById(id);
+    const lblEl = document.getElementById(lbl);
+    if (el) el.value = isFloat ? parseFloat(def).toFixed(1) : def;
+    if (lblEl) lblEl.textContent = isFloat ? def : def;
+  });
+  // 清空复选框
+  document.getElementById('sl-rev-check').checked = false;
+  document.getElementById('sl-prof-check').checked = false;
+  document.getElementById('sl-roe-check').checked = false;
+  document.getElementById('sl-cagr-check').checked = false;
+  document.getElementById('sl-pe-check').checked = false;
+  document.getElementById('sl-pb-check').checked = false;
+  document.getElementById('sl-vol-check').checked = false;
+  document.getElementById('sl-vcp-check').checked = false;
+  document.getElementById('sl-rsi-min-check').checked = false;
+  document.getElementById('sl-rsi-max-check').checked = false;
+  document.getElementById('sl-ma50-check').checked = false;
+  document.getElementById('sl-ma150-check').checked = false;
+  document.getElementById('sl-ma200-check').checked = false;
+  document.getElementById('sl-new-stock-check').checked = false;
+  document.getElementById('sl-exclude-st-check').checked = false;
+  document.getElementById('sl-north-check').checked = false;
+  document.getElementById('sl-south-check').checked = false;
+  document.getElementById('sl-vix-check').checked = false;
   document.getElementById('sl-vix-calm-check').checked = false;
   // 重置下拉框
   document.getElementById('sl-north-dir').value = 'all';
