@@ -2900,65 +2900,146 @@ header .update-time {
 
   <!-- 智能筛选 Tab（经典多维度选股） -->
   <div id="tab-classic" class="tab-content">
-    <div class="screen-filters">
-      <div class="filter-group">
-        <label style="font-size:12px;color:var(--text-dim)">市场：</label>
-        <select id="s-market">
-          <option value="all">全部</option><option value="hk">港股</option><option value="a">A股</option>
-        </select>
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-title">🎯 市场选择</div>
+      <select id="s-market" style="
+        width: 100%; padding: 11px 14px; border-radius: 8px;
+        border: 2px solid #00d4aa; background: #0f1623;
+        color: #00d4aa; font-size: 0.9em; font-weight: 600;
+        cursor: pointer; outline: none; appearance: none;
+        -webkit-appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%2300d4aa' d='M6 8L0 0h12z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 14px center;
+      ">
+        <option value="all">📈 A股 + 港股</option>
+        <option value="hk">🔵 仅 港股</option>
+        <option value="a">🟢 仅 A股</option>
+      </select>
+    </div>
+
+    <div class="card" style="margin-bottom:12px">
+      <div class="card-title">🔍 筛选条件</div>
+
+      <div style="font-size:0.65em;color:var(--text-dim);letter-spacing:1px;margin:8px 0 6px;text-transform:uppercase">基本面</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div>
+          <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="s-rev-yoy-check" checked> 1. 营收 YoY &gt; <span id="s-rev-val">25</span>%</label>
+          <input type="range" id="s-rev-yoy" min="0" max="80" value="25" step="5"
+            style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('s-rev-val').textContent=this.value">
+        </div>
+        <div>
+          <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="s-prof-yoy-check" checked> 2. 净利 YoY &gt; <span id="s-prof-val">30</span>%</label>
+          <input type="range" id="s-prof-yoy" min="0" max="100" value="30" step="5"
+            style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('s-prof-val').textContent=this.value">
+        </div>
+        <div>
+          <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="s-roe-check" checked> 3. ROE &gt; <span id="s-roe-val">15</span>%</label>
+          <input type="range" id="s-roe" min="0" max="40" value="15" step="1"
+            style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('s-roe-val').textContent=this.value">
+        </div>
+        <div>
+          <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="s-cagr-check" checked> 4. 3年CAGR &gt; <span id="s-cagr-val">20</span>%</label>
+          <input type="range" id="s-cagr" min="0" max="60" value="20" step="5"
+            style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('s-cagr-val').textContent=this.value">
+        </div>
+        <div>
+          <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="s-pe-check"> 5. PE &lt; <span id="s-pe-val">100</span></label>
+          <input type="range" id="s-pe" min="0" max="100" value="100" step="5"
+            style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('s-pe-val').textContent=this.value">
+        </div>
+        <div>
+          <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="s-pb-check"> 6. PB &lt; <span id="s-pb-val">20</span></label>
+          <input type="range" id="s-pb" min="0" max="20" value="20" step="1"
+            style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('s-pb-val').textContent=this.value">
+        </div>
       </div>
 
-      <div class="filter-section open">
-        <div class="filter-header" onclick="toggleSection(this)">
-          <span>📈 技术面</span><span class="section-count">已选 0 项</span><span class="toggle-icon">▼</span>
+      <div style="font-size:0.65em;color:var(--text-dim);letter-spacing:1px;margin:8px 0 6px;text-transform:uppercase">技术面</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="s-vol-check" checked> 7. 量比(10日/120日) &gt; <span id="s-vol-val">1.0</span>x</label>
+          <input type="range" id="s-vol-ratio" min="0.5" max="5" value="1.0" step="0.1"
+            style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('s-vol-val').textContent=this.value">
         </div>
-        <div class="filter-body">
-          <label class="filter-check"><input type="checkbox" id="s-ma50"> 1. MA50在价格上方</label>
-          <label class="filter-check"><input type="checkbox" id="s-ma150"> 2. MA150在价格上方</label>
-          <label class="filter-check"><input type="checkbox" id="s-ma200"> 3. MA200在价格上方</label>
-          <div class="filter-row"><span>4. 量比 ≥</span><input type="number" id="s-vol-ratio" value="0.5" min="0" step="0.1" style="width:60px"></div>
-          <div class="filter-row"><span>5. VCP评分 ≥</span><input type="number" id="s-vcp" value="30" min="0" max="100" style="width:60px"></div>
-          <div class="filter-row"><span>6. RSI ≤</span><input type="number" id="s-rsi-max" value="70" min="30" max="100" style="width:60px"></div>
-          <div class="filter-row"><span>7. RSI ≥</span><input type="number" id="s-rsi-min" placeholder="不限" min="0" max="100" style="width:60px"></div>
+        <div>
+          <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="s-vcp-check" checked> 8. VCP评分 &ge; <span id="s-vcp-val">60</span>分</label>
+          <input type="range" id="s-vcp" min="20" max="100" value="60" step="5"
+            style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('s-vcp-val').textContent=this.value">
+        </div>
+        <div>
+          <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="s-rsi-min-check" checked> 9. RSI(14) &gt; <span id="s-rsi-min-val">0</span></label>
+          <input type="range" id="s-rsi-min" min="0" max="70" value="0" step="5"
+            style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('s-rsi-min-val').textContent=this.value">
+        </div>
+        <div>
+          <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="s-rsi-max-check" checked> 10. RSI(14) &lt; <span id="s-rsi-max-val">100</span></label>
+          <input type="range" id="s-rsi-max" min="30" max="100" value="100" step="5"
+            style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('s-rsi-max-val').textContent=this.value">
+        </div>
+      </div>
+      <div style="margin-top:6px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text)">
+          <input type="checkbox" id="s-ma50-check" checked style="accent-color:var(--accent)">
+          11. 要求股价 &gt; 50日均线(MA50)
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text);margin-top:4px">
+          <input type="checkbox" id="s-ma150-check" checked style="accent-color:var(--accent)">
+          12. 要求 MA50 &gt; 150日均线(MA150)，即均线多头排列
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text);margin-top:4px">
+          <input type="checkbox" id="s-ma200-check" style="accent-color:var(--accent)">
+          13. 要求股价 &gt; 200日均线(MA200)，即长期趋势向上
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text);margin-top:4px">
+          <input type="checkbox" id="s-new-stock-check" checked style="accent-color:var(--accent)">
+          14. 剔除上市不满1年的次新股（K线数据少于250个交易日）
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text);margin-top:4px">
+          <input type="checkbox" id="s-exclude-st-check" checked style="accent-color:var(--accent)">
+          15. 剔除ST股票（A股）
+        </label>
+      </div>
+
+      <div style="font-size:0.65em;color:var(--text-dim);letter-spacing:1px;margin:8px 0 6px;text-transform:uppercase">资金面</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="s-north-check" checked> 16. 北向资金方向</label>
+          <select id="s-north-dir" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);font-size:0.75em;margin-top:4px">
+            <option value="all">全部</option>
+            <option value="buy">净买入</option>
+            <option value="sell">净卖出</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="s-south-check" checked> 17. 南向资金方向</label>
+          <select id="s-south-dir" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);font-size:0.75em;margin-top:4px">
+            <option value="all">全部</option>
+            <option value="buy">净买入</option>
+            <option value="sell">净卖出</option>
+          </select>
         </div>
       </div>
 
-      <div class="filter-section open">
-        <div class="filter-header" onclick="toggleSection(this)">
-          <span>📊 基本面</span><span class="section-count">已选 0 项</span><span class="toggle-icon">▼</span>
+      <div style="font-size:0.65em;color:var(--text-dim);letter-spacing:1px;margin:8px 0 6px;text-transform:uppercase">情绪面</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div>
+          <label style="font-size:0.72em;color:var(--muted)"><input type="checkbox" id="s-vix-check" checked> 18. VIX &lt; <span id="s-vix-val">50</span></label>
+          <input type="range" id="s-vix-max" min="10" max="50" value="50" step="2"
+            style="width:100%;accent-color:var(--accent)" oninput="document.getElementById('s-vix-val').textContent=this.value">
         </div>
-        <div class="filter-body">
-          <div class="filter-row"><label><input type="checkbox" id="s-rev-yoy-check" checked> 8. 营收增速 YoY ≥</label><input type="number" id="s-rev-yoy" value="25" min="0" max="100" style="width:60px">%</div>
-          <div class="filter-row"><label><input type="checkbox" id="s-profit-yoy-check" checked> 9. 净利润增速 YoY ≥</label><input type="number" id="s-profit-yoy" value="30" min="0" max="100" style="width:60px">%</div>
-          <div class="filter-row"><label><input type="checkbox" id="s-roe-check" checked> 10. ROE ≥</label><input type="number" id="s-roe" value="10" min="0" max="50" style="width:60px">%</div>
-          <div class="filter-row"><label><input type="checkbox" id="s-cagr-check" checked> 11. 3年CAGR ≥</label><input type="number" id="s-cagr" value="20" min="0" max="100" style="width:60px">%</div>
-        </div>
-      </div>
-
-      <div class="filter-section open">
-        <div class="filter-header" onclick="toggleSection(this)">
-          <span>💰 资金面</span><span class="section-count">已选 0 项</span><span class="toggle-icon">▼</span>
-        </div>
-        <div class="filter-body">
-          <div class="filter-row"><span>12. 北向资金：</span><select id="s-north-dir" style="width:90px"><option value="all">全部</option><option value="buy">净买入</option><option value="sell">净卖出</option></select></div>
-          <div class="filter-row"><span>13. 南向资金：</span><select id="s-south-dir" style="width:90px"><option value="all">全部</option><option value="buy">净买入</option><option value="sell">净卖出</option></select></div>
-        </div>
-      </div>
-
-      <div class="filter-section open">
-        <div class="filter-header" onclick="toggleSection(this)">
-          <span>🌊 情绪面</span><span class="section-count">已选 0 项</span><span class="toggle-icon">▼</span>
-        </div>
-        <div class="filter-body">
-          <div class="filter-row"><span>14. VIX ≤</span><input type="number" id="s-vix-max" placeholder="不限" min="0" max="100" style="width:60px"></div>
-          <label class="filter-check"><input type="checkbox" id="s-vix-calm"> 15. 仅VIX平静（≤25）</label>
+        <div style="display:flex;align-items:flex-end">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.8em;color:var(--text)">
+            <input type="checkbox" id="s-vix-calm-check" style="accent-color:var(--accent)">
+            19. 要求VIX &lt; 25（市场平静）
+          </label>
         </div>
       </div>
 
       <div style="display:flex;gap:10px;padding:10px 0">
         <button onclick="runScreening()" style="background:var(--accent);color:#000;font-weight:700;border:none;border-radius:6px;padding:9px 24px;cursor:pointer;font-size:14px">🔍 开始选股</button>
-        <button onclick="resetScreening()" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:9px 16px;cursor:pointer;font-size:13px;margin-right:8px">重置</button>
-        <button onclick="clearScreening()" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:9px 16px;cursor:pointer;font-size:13px">清空</button>
+        <button onclick="resetScreening()" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:9px 16px;cursor:pointer;font-size:13px;margin-right:8px">↺ 重置</button>
+        <button onclick="clearScreeningSmart()" style="background:var(--bg-card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:9px 16px;cursor:pointer;font-size:13px">🗑️ 清空</button>
         <button id="export-csv-btn" onclick="exportScreeningCSV()" style="display:none;background:var(--bg-card);color:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:9px 16px;cursor:pointer;font-size:13px">📥 导出CSV</button>
       </div>
     </div>
@@ -3618,7 +3699,20 @@ function renderSepaTable(rows) {
     const score = r.vcp_score || 0;
     h += `<tr style="cursor:pointer" data-code="${r.code}" onclick="showAnalysis('${r.code}')">`;
     h += '<td style="padding:7px 10px;color:var(--muted)">' + (i+1) + '</td>';
-    h += '<td style="padding:7px 10px;font-weight:600">' + (r.code||'') + '</td>';
+    // 生成腾讯股票网址
+    let code = r.code || '';
+    let url = '';
+    if (code.endsWith('.hk') || code.endsWith('.HK')) {
+      // 港股: https://gu.qq.com/hk09992/gp
+      let hkCode = code.replace('.hk', '').replace('.HK', '');
+      url = `https://gu.qq.com/hk${hkCode}/gp`;
+    } else if (code.endsWith('.SZ') || code.endsWith('.sz') || code.endsWith('.SS') || code.endsWith('.ss')) {
+      // A股: https://gu.qq.com/000001/gp
+      let aCode = code.replace('.SZ', '').replace('.sz', '').replace('.SS', '').replace('.ss', '');
+      url = `https://gu.qq.com/${aCode}/gp`;
+    }
+    let codeHTML = url ? `<a href="${url}" target="_blank" style="color:var(--accent);text-decoration:underline">${code}</a>` : code;
+    h += '<td style="padding:7px 10px;font-weight:600">' + codeHTML + '</td>';
     h += '<td style="padding:7px 10px">' + (r.name||'') + '</td>';
     h += '<td style="padding:7px 10px"><span class="market-tag ' + (r.market==='A股'?'market-A':'market-HK') + '">' + (r.market||'') + '</span></td>';
     h += '<td style="padding:7px 10px;color:var(--muted)">' + (r.sector||'—') + '</td>';
@@ -3819,24 +3913,35 @@ function showAnalysis(code) {
 let lastScreeningResults = [];
 
 async function runScreening() {
+  // 获取所有筛选条件参数
   const params = {
     market: document.getElementById('s-market').value,
+    // 技术面
     ma50_above: document.getElementById('s-ma50').checked,
     ma150_above: document.getElementById('s-ma150').checked,
     ma200_above: document.getElementById('s-ma200').checked,
-    min_vol_ratio: parseFloat(document.getElementById('s-vol-ratio').value) || 1.0,
-    min_vcp_score: parseFloat(document.getElementById('s-vcp').value) || 0,
-    rsi_max: parseFloat(document.getElementById('s-rsi-max').value) || null,
-    rsi_min: parseFloat(document.getElementById('s-rsi-min').value) || null,
-    min_rev_yoy: parseFloat(document.getElementById('s-rev-yoy').value) || 0,
-    min_profit_yoy: parseFloat(document.getElementById('s-profit-yoy').value) || 0,
-    min_roe: parseFloat(document.getElementById('s-roe').value) || 0,
-    min_cagr: parseFloat(document.getElementById('s-cagr').value) || 0,
-    north_dir: document.getElementById('s-north-dir').value,
-    south_dir: document.getElementById('s-south-dir').value,
-    vix_max: parseFloat(document.getElementById('s-vix-max').value) || null,
-    vix_calm: document.getElementById('s-vix-calm').checked,
+    min_vol_ratio: document.getElementById('s-vol-check').checked ? (parseFloat(document.getElementById('s-vol-ratio').value) || 1.0) : 0,
+    min_vcp_score: document.getElementById('s-vcp-check').checked ? (parseFloat(document.getElementById('s-vcp').value) || 0) : 0,
+    rsi_max: document.getElementById('s-rsi-max-check').checked ? (parseFloat(document.getElementById('s-rsi-max').value) || null) : null,
+    rsi_min: document.getElementById('s-rsi-min-check').checked ? (parseFloat(document.getElementById('s-rsi-min').value) || null) : null,
+    // 基本面
+    min_rev_yoy: document.getElementById('s-rev-yoy-check').checked ? (parseFloat(document.getElementById('s-rev-yoy').value) || 0) : 0,
+    min_profit_yoy: document.getElementById('s-prof-yoy-check').checked ? (parseFloat(document.getElementById('s-profit-yoy').value) || 0) : 0,
+    min_roe: document.getElementById('s-roe-check').checked ? (parseFloat(document.getElementById('s-roe').value) || 0) : 0,
+    min_cagr: document.getElementById('s-cagr-check').checked ? (parseFloat(document.getElementById('s-cagr').value) || 0) : 0,
+    max_pe: document.getElementById('s-pe-check').checked ? (parseFloat(document.getElementById('s-pe').value) || null) : null,
+    max_pb: document.getElementById('s-pb-check').checked ? (parseFloat(document.getElementById('s-pb').value) || null) : null,
+    // 资金面
+    north_dir: document.getElementById('s-north-check').checked ? document.getElementById('s-north-dir').value : null,
+    south_dir: document.getElementById('s-south-check').checked ? document.getElementById('s-south-dir').value : null,
+    // 情绪面
+    vix_max: document.getElementById('s-vix-check').checked ? (parseFloat(document.getElementById('s-vix-max').value) || null) : null,
+    vix_calm: document.getElementById('s-vix-calm-check').checked,
+    // 过滤条件
+    exclude_new_stock: document.getElementById('s-new-stock-check').checked,
+    exclude_st: document.getElementById('s-exclude-st-check').checked,
   };
+  
   const r = await fetch('/api/screening', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -3848,9 +3953,23 @@ async function runScreening() {
   const funnelEl = document.getElementById('s-funnel');
   funnelEl.style.display = 'flex';
   funnelEl.innerHTML = '<span class="funnel-step' + (f.total ? ' active' : '') + '">总计 ' + (f.total||0) + ' 只</span>' +
-    '<span class="funnel-step">MA50通过 ' + (f.ma50||0) + ' 只</span>' +
-    '<span class="funnel-step">MA150通过 ' + (f.ma150||0) + ' 只</span>' +
-    '<span class="funnel-step">VCP通过 ' + (f.vcp||0) + ' 只</span>' +
+    '<span class="funnel-step">1. 营收同比通过 ' + (f.rev_yoy||0) + ' 只</span>' +
+    '<span class="funnel-step">2. 净利润同比通过 ' + (f.profit_yoy||0) + ' 只</span>' +
+    '<span class="funnel-step">3. ROE通过 ' + (f.roe||0) + ' 只</span>' +
+    '<span class="funnel-step">4. 3年CAGR通过 ' + (f.cagr_3y||0) + ' 只</span>' +
+    '<span class="funnel-step">5. PE通过 ' + (f.pe||0) + ' 只</span>' +
+    '<span class="funnel-step">6. PB通过 ' + (f.pb||0) + ' 只</span>' +
+    '<span class="funnel-step">7. 量比起效 ' + (f.vol_ratio||0) + ' 只</span>' +
+    '<span class="funnel-step">8. VCP通过 ' + (f.vcp||0) + ' 只</span>' +
+    '<span class="funnel-step">9. RSI最小值通过 ' + (f.rsi_min||0) + ' 只</span>' +
+    '<span class="funnel-step">10. RSI最大值通过 ' + (f.rsi_max||0) + ' 只</span>' +
+    '<span class="funnel-step">11. MA50通过 ' + (f.ma50||0) + ' 只</span>' +
+    '<span class="funnel-step">12. MA150通过 ' + (f.ma150||0) + ' 只</span>' +
+    '<span class="funnel-step">13. MA200通过 ' + (f.ma200||0) + ' 只</span>' +
+    '<span class="funnel-step">16. 北向资金通过 ' + (f.north||0) + ' 只</span>' +
+    '<span class="funnel-step">17. 南向资金通过 ' + (f.south||0) + ' 只</span>' +
+    '<span class="funnel-step">18. VIX最大值通过 ' + (f.vix_max||0) + ' 只</span>' +
+    '<span class="funnel-step">19. VIX平静通过 ' + (f.vix_calm||0) + ' 只</span>' +
     '<span class="funnel-step active">最终 ' + (f.final||0) + ' 只</span>';
   const cols = [
     {key:'code', label:'代码', w:'90px'},
@@ -3916,10 +4035,29 @@ function renderTableBody(rows, cols) {
     h += '<tr data-code="'+r.code+'" onclick="showAnalysis(this.dataset.code)">';
     for (const c of cols) {
       let v = r[c.key];
-      if (c.bool) v = v ? '<span style="color:var(--accent)">✅</span>' : '<span style="color:var(--red)">❌</span>';
-      else if (c.pct) v = v != null ? v.toFixed(1)+'%' : '—';
-      else if (c.num) v = v != null ? (typeof v === 'number' ? v.toFixed(2) : v) : '—';
-      else if (v == null) v = '—';
+      if (c.key === 'code') {
+        // 生成腾讯股票网址
+        let code = r.code;
+        let url = '';
+        if (code.endsWith('.hk') || code.endsWith('.HK')) {
+          // 港股: https://gu.qq.com/hk09992/gp
+          let hkCode = code.replace('.hk', '').replace('.HK', '');
+          url = `https://gu.qq.com/hk${hkCode}/gp`;
+        } else if (code.endsWith('.SZ') || code.endsWith('.sz') || code.endsWith('.SS') || code.endsWith('.ss')) {
+          // A股: https://gu.qq.com/000001/gp
+          let aCode = code.replace('.SZ', '').replace('.sz', '').replace('.SS', '').replace('.ss', '');
+          url = `https://gu.qq.com/${aCode}/gp`;
+        }
+        v = `<a href="${url}" target="_blank" style="color:var(--accent);text-decoration:underline">${v}</a>`;
+      } else if (c.bool) {
+        v = v ? '<span style="color:var(--accent)">✅</span>' : '<span style="color:var(--red)">❌</span>';
+      } else if (c.pct) {
+        v = v != null ? v.toFixed(1)+'%' : '—';
+      } else if (c.num) {
+        v = v != null ? (typeof v === 'number' ? v.toFixed(2) : v) : '—';
+      } else if (v == null) {
+        v = '—';
+      }
       h += '<td class="'+(c.num?'num':'')+'">'+v+'</td>';
     }
     h += '</tr>';
@@ -3928,22 +4066,64 @@ function renderTableBody(rows, cols) {
 }
 
 function resetScreening() {
+  // 重置为默认值（与HTML中的默认值一致）
   document.getElementById('s-market').value='all';
-  document.getElementById('s-ma50').checked=false;
-  document.getElementById('s-ma150').checked=false;
-  document.getElementById('s-ma200').checked=false;
-  document.getElementById('s-vol-ratio').value='0.5';
-  document.getElementById('s-vcp').value='30';
-  document.getElementById('s-rsi-max').value='70';
-  document.getElementById('s-rsi-min').value='';
-  document.getElementById('s-rev-yoy').value='25';
-  document.getElementById('s-profit-yoy').value='30';
-  document.getElementById('s-roe').value='10';
-  document.getElementById('s-cagr').value='20';
-  document.getElementById('s-north-dir').value='all';
-  document.getElementById('s-south-dir').value='all';
-  document.getElementById('s-vix-max').value='';
-  document.getElementById('s-vix-calm').checked=false;
+  // 技术面
+  document.getElementById('s-vol-check').checked=true; document.getElementById('s-vol-ratio').value='1.0'; document.getElementById('s-vol-val').textContent='1.0';
+  document.getElementById('s-vcp-check').checked=true; document.getElementById('s-vcp').value='60'; document.getElementById('s-vcp-val').textContent='60';
+  document.getElementById('s-rsi-min-check').checked=true; document.getElementById('s-rsi-min').value='0'; document.getElementById('s-rsi-min-val').textContent='0';
+  document.getElementById('s-rsi-max-check').checked=true; document.getElementById('s-rsi-max').value='100'; document.getElementById('s-rsi-max-val').textContent='100';
+  document.getElementById('s-ma50-check').checked=true;
+  document.getElementById('s-ma150-check').checked=true;
+  document.getElementById('s-ma200-check').checked=false;
+  document.getElementById('s-new-stock-check').checked=true;
+  document.getElementById('s-exclude-st-check').checked=true;
+  // 基本面
+  document.getElementById('s-rev-yoy-check').checked=true; document.getElementById('s-rev-yoy').value='25'; document.getElementById('s-rev-val').textContent='25';
+  document.getElementById('s-prof-yoy-check').checked=true; document.getElementById('s-profit-yoy').value='30'; document.getElementById('s-prof-val').textContent='30';
+  document.getElementById('s-roe-check').checked=true; document.getElementById('s-roe').value='15'; document.getElementById('s-roe-val').textContent='15';
+  document.getElementById('s-cagr-check').checked=true; document.getElementById('s-cagr').value='20'; document.getElementById('s-cagr-val').textContent='20';
+  document.getElementById('s-pe-check').checked=false; document.getElementById('s-pe').value='100'; document.getElementById('s-pe-val').textContent='100';
+  document.getElementById('s-pb-check').checked=false; document.getElementById('s-pb').value='20'; document.getElementById('s-pb-val').textContent='20';
+  // 资金面
+  document.getElementById('s-north-check').checked=true; document.getElementById('s-north-dir').value='all';
+  document.getElementById('s-south-check').checked=true; document.getElementById('s-south-dir').value='all';
+  // 情绪面
+  document.getElementById('s-vix-check').checked=true; document.getElementById('s-vix-max').value='50'; document.getElementById('s-vix-val').textContent='50';
+  document.getElementById('s-vix-calm-check').checked=false;
+  // 隐藏结果
+  document.getElementById('s-funnel').style.display='none';
+  document.getElementById('s-results').style.display='none';
+  lastScreeningResults = [];
+}
+
+function clearScreeningSmart() {
+  // 清空所有条件为初始状态（所有复选框都不勾选，所有值都设为0）
+  document.getElementById('s-market').value='all';
+  // 技术面
+  document.getElementById('s-vol-check').checked=false; document.getElementById('s-vol-ratio').value='0'; document.getElementById('s-vol-val').textContent='0';
+  document.getElementById('s-vcp-check').checked=false; document.getElementById('s-vcp').value='0'; document.getElementById('s-vcp-val').textContent='0';
+  document.getElementById('s-rsi-min-check').checked=false; document.getElementById('s-rsi-min').value='0'; document.getElementById('s-rsi-min-val').textContent='0';
+  document.getElementById('s-rsi-max-check').checked=false; document.getElementById('s-rsi-max').value='0'; document.getElementById('s-rsi-max-val').textContent='0';
+  document.getElementById('s-ma50-check').checked=false;
+  document.getElementById('s-ma150-check').checked=false;
+  document.getElementById('s-ma200-check').checked=false;
+  document.getElementById('s-new-stock-check').checked=false;
+  document.getElementById('s-exclude-st-check').checked=false;
+  // 基本面
+  document.getElementById('s-rev-yoy-check').checked=false; document.getElementById('s-rev-yoy').value='0'; document.getElementById('s-rev-val').textContent='0';
+  document.getElementById('s-prof-yoy-check').checked=false; document.getElementById('s-profit-yoy').value='0'; document.getElementById('s-prof-val').textContent='0';
+  document.getElementById('s-roe-check').checked=false; document.getElementById('s-roe').value='0'; document.getElementById('s-roe-val').textContent='0';
+  document.getElementById('s-cagr-check').checked=false; document.getElementById('s-cagr').value='0'; document.getElementById('s-cagr-val').textContent='0';
+  document.getElementById('s-pe-check').checked=false; document.getElementById('s-pe').value='0'; document.getElementById('s-pe-val').textContent='0';
+  document.getElementById('s-pb-check').checked=false; document.getElementById('s-pb').value='0'; document.getElementById('s-pb-val').textContent='0';
+  // 资金面
+  document.getElementById('s-north-check').checked=false; document.getElementById('s-north-dir').value='all';
+  document.getElementById('s-south-check').checked=false; document.getElementById('s-south-dir').value='all';
+  // 情绪面
+  document.getElementById('s-vix-check').checked=false; document.getElementById('s-vix-max').value='0'; document.getElementById('s-vix-val').textContent='0';
+  document.getElementById('s-vix-calm-check').checked=false;
+  // 隐藏结果
   document.getElementById('s-funnel').style.display='none';
   document.getElementById('s-results').style.display='none';
   lastScreeningResults = [];
