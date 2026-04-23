@@ -3722,7 +3722,7 @@ function renderSepaTable(rows) {
       let aCode = code.replace('.SZ', '').replace('.sz', '').replace('.SS', '').replace('.ss', '');
       url = `https://gu.qq.com/${aCode}/gp`;
     }
-    let codeHTML = url ? `<a href="${url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:underline">${code}</a>` : code;
+    let codeHTML = url ? `<a href="#" onclick="event.stopPropagation(); window.open('${url}', '_blank', 'noopener,noreferrer'); return false;" style="color:var(--accent);text-decoration:underline">${code}</a>` : code;
     h += '<td style="padding:7px 10px;font-weight:600">' + codeHTML + '</td>';
     // 生成百度股票网址，点击时停留在当前页面
     let nameHTML = r.name || '';
@@ -3731,15 +3731,15 @@ function renderSepaTable(rows) {
     if (sepaCode.endsWith('.hk') || sepaCode.endsWith('.HK')) {
       // 港股: https://finance.baidu.com/stock/hk-00290?mainTab=%E5%88%86%E6%9E%90
       let hkCode = sepaCode.replace('.hk', '').replace('.HK', '');
-      nameUrl = `https://finance.baidu.com/stock/hk-${hkCode}?mainTab=%E5%88%86%E6%9E%90`;
+      nameUrl = `https://finance.baidu.com/stock/hk-${hkCode}?mainTab=%E5%88%86%E6%9E%90&origin=0`;
     } else if (sepaCode.endsWith('.SZ') || sepaCode.endsWith('.sz') || sepaCode.endsWith('.SS') || sepaCode.endsWith('.ss')) {
       // A股: https://finance.baidu.com/stock/sz-000001?mainTab=%E5%88%86%E6%9E%90
       let aCode = sepaCode.replace('.SZ', '').replace('.sz', '').replace('.SS', '').replace('.ss', '');
       let prefix = sepaCode.endsWith('.SZ') || sepaCode.endsWith('.sz') ? 'sz' : 'sh';
-      nameUrl = `https://finance.baidu.com/stock/${prefix}-${aCode}?mainTab=%E5%88%86%E6%9E%90`;
+      nameUrl = `https://finance.baidu.com/stock/${prefix}-${aCode}?mainTab=%E5%88%86%E6%9E%90&origin=0`;
     }
     if (nameUrl && nameHTML) {
-      nameHTML = `<a href="${nameUrl}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:underline">${nameHTML}</a>`;
+      nameHTML = `<a href="#" onclick="event.stopPropagation(); window.open('${nameUrl}', '_blank', 'noopener,noreferrer'); return false;" style="color:var(--accent);text-decoration:underline">${nameHTML}</a>`;
     }
     h += '<td style="padding:7px 10px">' + nameHTML + '</td>';
     h += '<td style="padding:7px 10px"><span class="market-tag ' + (r.market==='A股'?'market-A':'market-HK') + '">' + (r.market||'') + '</span></td>';
@@ -4076,7 +4076,7 @@ function renderTableBody(rows, cols) {
           let aCode = code.replace('.SZ', '').replace('.sz', '').replace('.SS', '').replace('.ss', '');
           url = `https://gu.qq.com/${aCode}/gp`;
         }
-        v = `<a href="${url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:underline">${v}</a>`;
+        v = `<a href="#" onclick="event.stopPropagation(); window.open('${url}', '_blank', 'noopener,noreferrer'); return false;" style="color:var(--accent);text-decoration:underline">${v}</a>`;
       } else if (c.key === 'name') {
         // 生成百度股票网址，点击时停留在当前页面
         let code = r.code;
@@ -4084,14 +4084,14 @@ function renderTableBody(rows, cols) {
         if (code.endsWith('.hk') || code.endsWith('.HK')) {
           // 港股: https://finance.baidu.com/stock/hk-00290?mainTab=%E5%88%86%E6%9E%90
           let hkCode = code.replace('.hk', '').replace('.HK', '');
-          url = `https://finance.baidu.com/stock/hk-${hkCode}?mainTab=%E5%88%86%E6%9E%90`;
+          url = `https://finance.baidu.com/stock/hk-${hkCode}?mainTab=%E5%88%86%E6%9E%90&origin=0`;
         } else if (code.endsWith('.SZ') || code.endsWith('.sz') || code.endsWith('.SS') || code.endsWith('.ss')) {
           // A股: https://finance.baidu.com/stock/sz-000001?mainTab=%E5%88%86%E6%9E%90
           let aCode = code.replace('.SZ', '').replace('.sz', '').replace('.SS', '').replace('.ss', '');
           let prefix = code.endsWith('.SZ') || code.endsWith('.sz') ? 'sz' : 'sh';
-          url = `https://finance.baidu.com/stock/${prefix}-${aCode}?mainTab=%E5%88%86%E6%9E%90`;
+          url = `https://finance.baidu.com/stock/${prefix}-${aCode}?mainTab=%E5%88%86%E6%9E%90&origin=0`;
         }
-        v = `<a href="${url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:underline">${v}</a>`;
+        v = `<a href="#" onclick="event.stopPropagation(); window.open('${url}', '_blank', 'noopener,noreferrer'); return false;" style="color:var(--accent);text-decoration:underline">${v}</a>`;
       } else if (c.bool) {
         v = v ? '<span style="color:var(--accent)">✅</span>' : '<span style="color:var(--red)">❌</span>';
       } else if (c.pct) {
