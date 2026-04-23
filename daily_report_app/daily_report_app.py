@@ -52,8 +52,8 @@ except Exception:
 DEFAULT_CFG = {
     "a_kline_dir":   "/Users/tonyleung/Downloads/股票/A股/Kline",
     "hk_kline_dir":  "/Users/tonyleung/Downloads/股票/港股/Kline",
-    "north_dir":     "./data/north",
-    "south_dir":     "./data/south",
+    "north_dir":     "/Users/tonyleung/.openclaw/agency-agents/stock-analyst/data/north",
+    "south_dir":     "/Users/tonyleung/.openclaw/agency-agents/stock-analyst/data/south",
     "report_dir":    "/Users/tonyleung/Downloads/股票/每日报告",
 }
 
@@ -1814,7 +1814,18 @@ app = FastAPI(title="哮天每日收盘报告", version="4.0")
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    return HTML_CONTENT
+    # 获取文件的最新修改时间
+    import os
+    import time
+    file_path = __file__
+    if os.path.exists(file_path):
+        mtime = os.path.getmtime(file_path)
+        last_update = time.strftime('%Y-%m-%d %H:%M', time.localtime(mtime))
+    else:
+        last_update = time.strftime('%Y-%m-%d %H:%M', time.localtime())
+    # 替换模板变量
+    html = HTML_CONTENT.replace('{{ last_update }}', last_update)
+    return html
 
 
 @app.get("/favicon.ico")
@@ -2622,7 +2633,7 @@ header .update-time {
 
 <header>
   <div class="logo">🐾 哮天 <span>每日收盘报告</span></div>
-  <div class="update-time" id="update-time">最后更新: <script>document.write(new Date().toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'}))</script></div>
+  <div class="update-time" id="update-time">最后更新: {{ last_update }}</div>
   <div class="tabs">
     <button class="tab active" data-tab="dashboard" onclick="switchTab(this)">📊 Dashboard</button>
     <button class="tab" data-tab="screening" onclick="switchTab(this)">🎯 SEPA × VCP</button>
@@ -2724,9 +2735,9 @@ header .update-time {
           background-repeat: no-repeat;
           background-position: right 14px center;
         ">
-          <option value="both">📈 A股 + 港股</option>
+          <option value="hk" selected>🔵 仅 港股</option>
           <option value="cn">🟢 仅 A股</option>
-          <option value="hk">🔵 仅 港股</option>
+          <option value="both">📈 A股 + 港股</option>
         </select>
       </div>
 
@@ -3711,9 +3722,26 @@ function renderSepaTable(rows) {
       let aCode = code.replace('.SZ', '').replace('.sz', '').replace('.SS', '').replace('.ss', '');
       url = `https://gu.qq.com/${aCode}/gp`;
     }
-    let codeHTML = url ? `<a href="${url}" target="_blank" style="color:var(--accent);text-decoration:underline">${code}</a>` : code;
+    let codeHTML = url ? `<a href="${url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:underline">${code}</a>` : code;
     h += '<td style="padding:7px 10px;font-weight:600">' + codeHTML + '</td>';
-    h += '<td style="padding:7px 10px">' + (r.name||'') + '</td>';
+    // 生成百度股票网址，点击时停留在当前页面
+    let nameHTML = r.name || '';
+    let nameUrl = '';
+    let sepaCode = r.code || '';
+    if (sepaCode.endsWith('.hk') || sepaCode.endsWith('.HK')) {
+      // 港股: https://finance.baidu.com/stock/hk-00290?mainTab=%E5%88%86%E6%9E%90
+      let hkCode = sepaCode.replace('.hk', '').replace('.HK', '');
+      nameUrl = `https://finance.baidu.com/stock/hk-${hkCode}?mainTab=%E5%88%86%E6%9E%90`;
+    } else if (sepaCode.endsWith('.SZ') || sepaCode.endsWith('.sz') || sepaCode.endsWith('.SS') || sepaCode.endsWith('.ss')) {
+      // A股: https://finance.baidu.com/stock/sz-000001?mainTab=%E5%88%86%E6%9E%90
+      let aCode = sepaCode.replace('.SZ', '').replace('.sz', '').replace('.SS', '').replace('.ss', '');
+      let prefix = sepaCode.endsWith('.SZ') || sepaCode.endsWith('.sz') ? 'sz' : 'sh';
+      nameUrl = `https://finance.baidu.com/stock/${prefix}-${aCode}?mainTab=%E5%88%86%E6%9E%90`;
+    }
+    if (nameUrl && nameHTML) {
+      nameHTML = `<a href="${nameUrl}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:underline">${nameHTML}</a>`;
+    }
+    h += '<td style="padding:7px 10px">' + nameHTML + '</td>';
     h += '<td style="padding:7px 10px"><span class="market-tag ' + (r.market==='A股'?'market-A':'market-HK') + '">' + (r.market||'') + '</span></td>';
     h += '<td style="padding:7px 10px;color:var(--muted)">' + (r.sector||'—') + '</td>';
     h += '<td style="padding:7px 10px;text-align:right;font-weight:600">' + fmt(r.close) + '</td>';
@@ -3773,7 +3801,7 @@ function resetSepaVcp() {
   document.getElementById('sl-north-dir').value = 'all';
   document.getElementById('sl-south-dir').value = 'all';
   // 重置市场选择
-  document.getElementById('market-select').value = 'both';
+  document.getElementById('market-select').value = 'hk';
   // 重置显示
   document.getElementById('sepa-funnel-card').style.display = 'none';
   document.getElementById('sepa-result-card').style.display = 'none';
@@ -3822,7 +3850,7 @@ function clearSepaVcp() {
   document.getElementById('sl-north-dir').value = 'all';
   document.getElementById('sl-south-dir').value = 'all';
   // 重置市场选择
-  document.getElementById('market-select').value = 'both';
+  document.getElementById('market-select').value = 'hk';
   // 重置显示
   document.getElementById('sepa-funnel-card').style.display = 'none';
   document.getElementById('sepa-result-card').style.display = 'none';
@@ -3875,7 +3903,7 @@ function clearScreening() {
   document.getElementById('sl-north-dir').value = 'all';
   document.getElementById('sl-south-dir').value = 'all';
   // 重置市场选择
-  document.getElementById('market-select').value = 'both';
+  document.getElementById('market-select').value = 'hk';
   // 重置显示
   document.getElementById('sepa-funnel-card').style.display = 'none';
   document.getElementById('sepa-result-card').style.display = 'none';
@@ -4036,7 +4064,7 @@ function renderTableBody(rows, cols) {
     for (const c of cols) {
       let v = r[c.key];
       if (c.key === 'code') {
-        // 生成腾讯股票网址
+        // 生成腾讯股票网址，点击时停留在当前页面
         let code = r.code;
         let url = '';
         if (code.endsWith('.hk') || code.endsWith('.HK')) {
@@ -4048,7 +4076,22 @@ function renderTableBody(rows, cols) {
           let aCode = code.replace('.SZ', '').replace('.sz', '').replace('.SS', '').replace('.ss', '');
           url = `https://gu.qq.com/${aCode}/gp`;
         }
-        v = `<a href="${url}" target="_blank" style="color:var(--accent);text-decoration:underline">${v}</a>`;
+        v = `<a href="${url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:underline">${v}</a>`;
+      } else if (c.key === 'name') {
+        // 生成百度股票网址，点击时停留在当前页面
+        let code = r.code;
+        let url = '';
+        if (code.endsWith('.hk') || code.endsWith('.HK')) {
+          // 港股: https://finance.baidu.com/stock/hk-00290?mainTab=%E5%88%86%E6%9E%90
+          let hkCode = code.replace('.hk', '').replace('.HK', '');
+          url = `https://finance.baidu.com/stock/hk-${hkCode}?mainTab=%E5%88%86%E6%9E%90`;
+        } else if (code.endsWith('.SZ') || code.endsWith('.sz') || code.endsWith('.SS') || code.endsWith('.ss')) {
+          // A股: https://finance.baidu.com/stock/sz-000001?mainTab=%E5%88%86%E6%9E%90
+          let aCode = code.replace('.SZ', '').replace('.sz', '').replace('.SS', '').replace('.ss', '');
+          let prefix = code.endsWith('.SZ') || code.endsWith('.sz') ? 'sz' : 'sh';
+          url = `https://finance.baidu.com/stock/${prefix}-${aCode}?mainTab=%E5%88%86%E6%9E%90`;
+        }
+        v = `<a href="${url}" target="_blank" onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:underline">${v}</a>`;
       } else if (c.bool) {
         v = v ? '<span style="color:var(--accent)">✅</span>' : '<span style="color:var(--red)">❌</span>';
       } else if (c.pct) {
