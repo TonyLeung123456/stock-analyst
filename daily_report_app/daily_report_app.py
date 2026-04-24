@@ -1988,6 +1988,30 @@ async def api_path_info(path: str):
         files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
         if not files:
             return JSONResponse({"status": "ok", "path": path, "latest": None, "count": 0})
+        
+        # 对于 K 线目录，读取文件内容中的最新日期
+        if "Kline" in path or "kline" in path:
+            latest_date = None
+            for f in files:
+                if f.endswith(".csv"):
+                    csv_path = os.path.join(path, f)
+                    try:
+                        with open(csv_path, "r", encoding="utf-8") as csv_file:
+                            reader = csv.DictReader(csv_file)
+                            dates = []
+                            for row in reader:
+                                if "date" in row:
+                                    dates.append(row["date"])
+                            if dates:
+                                max_date = max(dates)
+                                if not latest_date or max_date > latest_date:
+                                    latest_date = max_date
+                    except:
+                        continue
+            if latest_date:
+                return JSONResponse({"status": "ok", "path": path, "latest": latest_date, "count": len(files)})
+        
+        # 对于其他目录，使用文件修改时间
         latest_mtime = max(os.path.getmtime(os.path.join(path, f)) for f in files)
         latest_date = date.fromtimestamp(latest_mtime).isoformat()
         return JSONResponse({"status": "ok", "path": path, "latest": latest_date, "count": len(files)})

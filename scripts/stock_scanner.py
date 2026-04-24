@@ -638,8 +638,8 @@ def scan_market(kline_dir: str, strategies: list, market: str = 'hk',
                     line = line.strip()
                     if ',' in line:
                         code, name = line.split(',', 1)
-                        # 5位码 00001 → 4位 0001 → 0001.HK
-                        code_hk = code.lstrip('0').zfill(4) + '.HK'
+                        # 5位码 00001 → 5位 00001 → 00001.HK
+                        code_hk = code.lstrip('0').zfill(5) + '.HK'
                         stock_names[code_hk] = name
             print(f"  📖 已加载 {len(stock_names)} 只港股名称")
     elif market == 'a':
@@ -759,8 +759,8 @@ def save_results(signals: list, market: str, strategies: list, combo_expr: str =
                 code = code.strip()
                 name = name.strip()
                 if market == 'hk':
-                    # 5位码 00001 → 4位 0001 → 0001.HK
-                    code_hk = code.lstrip('0').zfill(4) + '.HK'
+                    # 5位码 00001 → 5位 00001 → 00001.HK
+                    code_hk = code.lstrip('0').zfill(5) + '.HK'
                     name_map[code_hk] = name
                 elif market == 'a':
                     # A股: 6位码，600/688开头 → .SS，其他 → .SZ
